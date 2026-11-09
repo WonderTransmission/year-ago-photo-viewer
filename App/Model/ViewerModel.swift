@@ -51,6 +51,54 @@ final class ViewerModel {
         didSet { settings.defaultDateSource = defaultDateSource }
     }
 
+    /// Whether the "On This Day" item appears in the menu bar.
+    var showMenuBarItem: Bool {
+        didSet { settings.showMenuBarItem = showMenuBarItem }
+    }
+
+    // MARK: On This Day (menu bar)
+
+    /// The viewer's initial year (1 year ago, or the nearest year with
+    /// photos when empty years are hidden) and its photos.
+    private(set) var onThisDay: OnThisDay?
+    /// The photo the menu bar shows, an index into `onThisDay.photos`.
+    private(set) var onThisDayIndex = 0
+
+    var onThisDayPhoto: PhotoItem? {
+        guard let photos = onThisDay?.photos, photos.indices.contains(onThisDayIndex) else { return nil }
+        return photos[onThisDayIndex]
+    }
+
+    /// Shows a different random photo from the same window.
+    func shuffleOnThisDay() {
+        guard let count = onThisDay?.photos.count, count > 1 else { return }
+        var next = onThisDayIndex
+        while next == onThisDayIndex {
+            next = Int.random(in: 0..<count)
+        }
+        onThisDayIndex = next
+    }
+
+    /// Moves the main viewer to the menu bar's photo.
+    func showOnThisDayInViewer() {
+        guard let onThisDay else { return }
+        goToYear(onThisDay.yearsAgo)
+        if let photo = onThisDayPhoto, let index = photos.firstIndex(where: { $0.id == photo.id }) {
+            jump(to: index)
+        }
+    }
+
+    private func refreshOnThisDay() {
+        let updated = OnThisDay.years(count: 1, timeline: timeline, navigator: navigator, today: today,
+                                      weeks: weeks, calculator: calculator).first
+        guard updated != onThisDay else { return }
+        let keptID = onThisDayPhoto?.id
+        onThisDay = updated
+        let photos = updated?.photos ?? []
+        onThisDayIndex = photos.firstIndex { $0.id == keptID }
+            ?? (photos.isEmpty ? 0 : Int.random(in: 0..<photos.count))
+    }
+
     // MARK: State
 
     /// Every source, in the user's order.
@@ -105,6 +153,7 @@ final class ViewerModel {
         weeks = settings.weeks
         showEmptyYears = settings.showEmptyYears
         defaultDateSource = settings.defaultDateSource
+        showMenuBarItem = settings.showMenuBarItem
         window = WindowCalculator().window(today: launchDay, yearsAgo: 1, weeks: SettingsStore().weeks)
         debugFolders = Self.debugFolderArguments()
         index = Self.openIndex(debug: !debugFolders.isEmpty)
@@ -554,6 +603,7 @@ final class ViewerModel {
                                         showEmptyYears: showEmptyYears, calculator: calculator)
         yearsAgo = preferredYear.map { navigator.nearest(to: $0) } ?? navigator.initialYear
         applyWindow()
+        refreshOnThisDay()
     }
 
     private func applyWindow() {

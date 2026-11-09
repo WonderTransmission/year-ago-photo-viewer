@@ -3,6 +3,7 @@ import YearAgoCore
 
 @main
 struct YearAgoPhotoViewerApp: App {
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var model = ViewerModel()
 
     var body: some Scene {
@@ -14,10 +15,24 @@ struct YearAgoPhotoViewerApp: App {
             ViewerCommands(model: model)
         }
 
+        MenuBarExtra("On This Day", systemImage: "clock.arrow.circlepath", isInserted: $model.showMenuBarItem) {
+            MenuBarContentView()
+                .environment(model)
+        }
+        .menuBarExtraStyle(.window)
+
         Settings {
             SettingsView()
                 .environment(model)
         }
+    }
+}
+
+/// Keeps the app running after its window closes while the menu bar item
+/// is shown, so the item stays available.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !SettingsStore().showMenuBarItem
     }
 }
 

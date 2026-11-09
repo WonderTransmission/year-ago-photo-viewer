@@ -13,6 +13,12 @@ struct SettingsView: View {
                 Toggle("Show years with no photos", isOn: $model.showEmptyYears)
             }
             Section {
+                Toggle("Show “On This Day” in the menu bar", isOn: $model.showMenuBarItem)
+            } footer: {
+                Text("While it's shown, closing the window keeps the app running in the menu bar.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Default date for new sources", selection: $model.defaultDateSource) {
                     ForEach(DateSourceKind.allCases, id: \.self) { kind in
                         Text(kind.displayName).tag(kind)

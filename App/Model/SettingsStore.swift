@@ -11,6 +11,7 @@ struct SettingsStore {
         /// Before M5 this was the single folder's date source. It is now the
         /// default for newly added sources.
         static let defaultDateSource = "dateSource"
+        static let showMenuBarItem = "showMenuBarItem"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -19,7 +20,13 @@ struct SettingsStore {
             Key.weeks: 1,
             Key.showEmptyYears: true,
             Key.defaultDateSource: DateSourceKind.exif.rawValue,
+            Key.showMenuBarItem: true,
         ])
+    }
+
+    var showMenuBarItem: Bool {
+        get { defaults.bool(forKey: Key.showMenuBarItem) }
+        nonmutating set { defaults.set(newValue, forKey: Key.showMenuBarItem) }
     }
 
     var weeks: Int {

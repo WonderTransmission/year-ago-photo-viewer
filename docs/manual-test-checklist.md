@@ -55,3 +55,19 @@ Tip: copy the boxes into a release issue and tick them there.
   turn access off and relaunch. The source shows "No Access…", which opens
   System Settings. No library photos appear; folder photos still do.
 - [ ] **Add twice.** Add Photos Library is disabled once the library is a source.
+
+## Menu bar item (M9)
+
+- [ ] **Shown by default.** A clock-arrow icon appears in the menu bar.
+  Clicking it shows "On This Day" with one photo from the viewer's first year.
+- [ ] **Shuffle.** Shuffle shows a different photo from the same week. It is
+  disabled when the week has fewer than two photos.
+- [ ] **Open in Viewer.** Opens the main window at that photo and closes the
+  popover.
+- [ ] **Empty week.** With "Show years with no photos" on and no photos last
+  year, the popover says "No photos from …". With it off, it shows the
+  nearest year with photos.
+- [ ] **Close the window.** Close the main window. The app keeps running and
+  the menu bar item still works. Open in Viewer brings the window back.
+- [ ] **Hide.** Settings › untick "Show “On This Day” in the menu bar". The
+  icon disappears. Closing the window now quits the app.
