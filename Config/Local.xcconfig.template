@@ -1,0 +1,15 @@
+// Copy this file to Local.xcconfig and fill in your values.
+// Git ignores Local.xcconfig, so personal values never reach the repo.
+
+// Reverse-DNS prefix for bundle IDs, e.g. com.yourname
+BUNDLE_ID_PREFIX = com.example
+
+// Your Apple development team ID. Leave empty to sign ad hoc.
+// A team is required once the widget (App Group) is added.
+DEVELOPMENT_TEAM =
+
+// Use "Apple Development" when DEVELOPMENT_TEAM is set; "-" for ad hoc.
+CODE_SIGN_IDENTITY = -
+
+// App Group shared by the app and the widget (used from milestone M10).
+APP_GROUP_ID = group.com.example.yearago

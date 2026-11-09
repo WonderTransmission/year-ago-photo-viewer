@@ -1,0 +1,254 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000B01 /* YearAgoCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000D01 /* YearAgoCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000F01 /* Year Ago Photo Viewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Year Ago Photo Viewer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000F02 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		A10000000000000000000F03 /* Local.xcconfig.template */ = {isa = PBXFileReference; lastKnownFileType = text; path = Local.xcconfig.template; sourceTree = "<group>"; };
+		A10000000000000000000F04 /* YearAgoCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = YearAgoCore; path = Packages/YearAgoCore; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10000000000000000000E01 /* Exceptions for "App" folder in "YearAgoPhotoViewer" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				App.entitlements,
+			);
+			target = A10000000000000000000701 /* YearAgoPhotoViewer */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000501 /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A10000000000000000000E01 /* Exceptions for "App" folder in "YearAgoPhotoViewer" target */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000302 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000B01 /* YearAgoCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000401 = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000501 /* App */,
+				A10000000000000000000403 /* Config */,
+				A10000000000000000000F04 /* YearAgoCore */,
+				A10000000000000000000402 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000402 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000F01 /* Year Ago Photo Viewer.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000403 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000F02 /* Base.xcconfig */,
+				A10000000000000000000F03 /* Local.xcconfig.template */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000701 /* YearAgoPhotoViewer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000903 /* Build configuration list for PBXNativeTarget "YearAgoPhotoViewer" */;
+			buildPhases = (
+				A10000000000000000000301 /* Sources */,
+				A10000000000000000000302 /* Frameworks */,
+				A10000000000000000000303 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000501 /* App */,
+			);
+			name = YearAgoPhotoViewer;
+			packageProductDependencies = (
+				A10000000000000000000D01 /* YearAgoCore */,
+			);
+			productName = YearAgoPhotoViewer;
+			productReference = A10000000000000000000F01 /* Year Ago Photo Viewer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000601 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2720;
+				LastUpgradeCheck = 2720;
+				TargetAttributes = {
+					A10000000000000000000701 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+				};
+			};
+			buildConfigurationList = A10000000000000000000901 /* Build configuration list for PBXProject "YearAgoPhotoViewer" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A10000000000000000000401;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000000000000000000C01 /* XCLocalSwiftPackageReference "Packages/YearAgoCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A10000000000000000000402 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000701 /* YearAgoPhotoViewer */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000303 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000301 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000801 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000F02 /* Base.xcconfig */;
+			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A10000000000000000000802 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000F02 /* Base.xcconfig */;
+			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A10000000000000000000803 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 WonderTransmission. MIT License.";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).YearAgoPhotoViewer";
+				PRODUCT_MODULE_NAME = YearAgoPhotoViewer;
+				PRODUCT_NAME = "Year Ago Photo Viewer";
+			};
+			name = Debug;
+		};
+		A10000000000000000000804 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 WonderTransmission. MIT License.";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).YearAgoPhotoViewer";
+				PRODUCT_MODULE_NAME = YearAgoPhotoViewer;
+				PRODUCT_NAME = "Year Ago Photo Viewer";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000901 /* Build configuration list for PBXProject "YearAgoPhotoViewer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000801 /* Debug */,
+				A10000000000000000000802 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000903 /* Build configuration list for PBXNativeTarget "YearAgoPhotoViewer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000803 /* Debug */,
+				A10000000000000000000804 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A10000000000000000000C01 /* XCLocalSwiftPackageReference "Packages/YearAgoCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/YearAgoCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000D01 /* YearAgoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = YearAgoCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A10000000000000000000601 /* Project object */;
+}

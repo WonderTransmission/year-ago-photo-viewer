@@ -1,0 +1,19 @@
+// Shared build settings for all targets.
+//
+// Personal values (team, bundle ID prefix, App Group) belong in
+// Local.xcconfig, which git ignores. Copy Local.xcconfig.template to start.
+
+// Defaults, overridden by Local.xcconfig when present.
+BUNDLE_ID_PREFIX = com.example
+DEVELOPMENT_TEAM =
+CODE_SIGN_IDENTITY = -
+
+#include? "Local.xcconfig"
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 26.0
+SWIFT_VERSION = 6.0
+CODE_SIGN_STYLE = Automatic
+ENABLE_HARDENED_RUNTIME = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+CLANG_ENABLE_MODULES = YES
