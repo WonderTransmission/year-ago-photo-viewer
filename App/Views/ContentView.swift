@@ -29,6 +29,14 @@ struct ContentView: View {
         .frame(minWidth: 640, minHeight: 480)
         .navigationTitle(model.folderName ?? CoreInfo.appName)
         .toolbar {
+            ToolbarItemGroup {
+                DateSourcePicker(selection: $model.dateSource)
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                WindowLengthPicker(selection: $model.weeks)
+                    .pickerStyle(.menu)
+                    .fixedSize()
+            }
             ToolbarItem {
                 Button("Choose Folder…", systemImage: "folder") {
                     model.isChoosingFolder = true

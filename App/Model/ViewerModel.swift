@@ -5,8 +5,8 @@ import YearAgoCore
 
 private let logger = Logger(subsystem: "YearAgoPhotoViewer", category: "viewer")
 
-/// State for the main window: the folder, the current year's photos, and
-/// the position within them.
+/// State for the main window: the folder, settings, the year on screen,
+/// and the position within that year's photos.
 @MainActor
 @Observable
 final class ViewerModel {
@@ -19,10 +19,46 @@ final class ViewerModel {
 
     /// Longest side, in pixels, for decoding the on-screen photo.
     static let displayPixelSize = 3000
+    /// Longest side, in pixels, for filmstrip thumbnails.
+    static let thumbnailPixelSize = 160
+
+    // MARK: Settings (persisted)
+
+    /// Window length W, 1–6 weeks.
+    var weeks: Int {
+        didSet {
+            guard weeks != oldValue else { return }
+            settings.weeks = weeks
+            rebuildNavigator(preferredYear: yearsAgo)
+        }
+    }
+
+    /// Whether years with no photos in the window are offered.
+    var showEmptyYears: Bool {
+        didSet {
+            guard showEmptyYears != oldValue else { return }
+            settings.showEmptyYears = showEmptyYears
+            rebuildNavigator(preferredYear: yearsAgo)
+        }
+    }
+
+    /// Where photo dates come from. Changing it rescans the folder.
+    var dateSource: DateSourceKind {
+        didSet {
+            guard dateSource != oldValue else { return }
+            settings.dateSource = dateSource
+            if let folderURL { load(folderURL, preferredYear: yearsAgo) }
+        }
+    }
+
+    // MARK: State
 
     private(set) var phase: Phase = .noFolder
     private(set) var folderURL: URL?
+    /// N: the year on screen.
+    private(set) var yearsAgo = 1
     private(set) var window: DateWindow
+    private(set) var navigator = YearNavigator(photoCounts: [], showEmptyYears: true)
     /// Photos in the current window, in date order.
     private(set) var photos: [PhotoItem] = []
     private(set) var stepper = PhotoStepper(count: 0)
@@ -30,25 +66,27 @@ final class ViewerModel {
     var isChoosingFolder = false
 
     let imageLoader = ImageLoader()
+    let thumbnailLoader = ImageLoader(countLimit: 400)
 
+    private let settings = SettingsStore()
     private let access = FolderAccess()
     private let calculator = WindowCalculator()
+    private let today: LocalDateTime
     private var timeline = PhotoTimeline.empty
     private var loadTask: Task<Void, Never>?
 
-    // M3 makes these adjustable.
-    private let today: LocalDateTime
-    private let yearsAgo = 1
-    private let weeks = 1
-    private let dateSource: DateSourceKind = .exif
-
     init() {
         today = Self.launchToday()
-        window = calculator.window(today: today, yearsAgo: yearsAgo, weeks: weeks)
+        weeks = settings.weeks
+        showEmptyYears = settings.showEmptyYears
+        dateSource = settings.dateSource
+        window = calculator.window(today: today, yearsAgo: 1, weeks: settings.weeks)
         if let url = Self.debugFolder() ?? access.restore() {
-            load(url)
+            load(url, preferredYear: nil)
         }
     }
+
+    // MARK: Derived values
 
     var folderName: String? { folderURL?.lastPathComponent }
 
@@ -56,46 +94,85 @@ final class ViewerModel {
         stepper.currentIndex.map { photos[$0] }
     }
 
-    /// The year shown, e.g. 2025 for "1 year ago" in 2026.
-    var displayedYear: Int {
-        window.range.upperBound.components.year ?? 0
+    /// The calendar year shown, e.g. 2025 for "1 year ago" in 2026.
+    var displayedYear: Int { calendarYear(yearsAgo: yearsAgo) }
+
+    /// The calendar year of N's anniversary date.
+    func calendarYear(yearsAgo: Int) -> Int {
+        calculator.anniversary(of: today, yearsAgo: yearsAgo).components.year ?? 0
     }
+
+    var nextYear: Int? { navigator.next(after: yearsAgo) }
+    var previousYear: Int? { navigator.previous(before: yearsAgo) }
+
+    // MARK: Actions
 
     func chooseFolder(_ url: URL) {
         do {
-            load(try access.adopt(url))
+            load(try access.adopt(url), preferredYear: nil)
         } catch {
             phase = .failed("Couldn't open “\(url.lastPathComponent)”: \(error.localizedDescription)")
         }
     }
 
-    func next() {
+    func nextPhoto() {
         stepper.next()
         prefetch()
     }
 
-    func previous() {
+    func previousPhoto() {
         stepper.previous()
     }
 
-    // MARK: - Loading
+    func jump(to index: Int) {
+        stepper.jump(to: index)
+        prefetch()
+    }
 
-    private func load(_ url: URL) {
+    func goToNextYear() {
+        if let nextYear { goToYear(nextYear) }
+    }
+
+    func goToPreviousYear() {
+        if let previousYear { goToYear(previousYear) }
+    }
+
+    /// Opens year N at its first photo. Ignores years that are not offered.
+    func goToYear(_ yearsAgo: Int) {
+        guard navigator.years.contains(yearsAgo) else { return }
+        self.yearsAgo = yearsAgo
+        applyWindow()
+    }
+
+    // MARK: Loading
+
+    /// Scans `url`. Afterwards opens `preferredYear` (or the nearest offered
+    /// year), or the initial year when nil.
+    private func load(_ url: URL, preferredYear: Int?) {
         folderURL = url
         phase = .scanning
         loadTask?.cancel()
+        let source = dateSource
         loadTask = Task {
-            let timeline = await FolderPhotoLoader.load(folder: url, dateSource: dateSource)
+            let timeline = await FolderPhotoLoader.load(folder: url, dateSource: source)
             guard !Task.isCancelled else { return }
             self.timeline = timeline
-            applyWindow()
+            rebuildNavigator(preferredYear: preferredYear)
             phase = .ready
             // Counts and dates only: never log paths or file names.
-            logger.info("Scan done: \(timeline.photos.count, privacy: .public) dated photos, \(self.photos.count, privacy: .public) in window \(self.window.range.lowerBound.description, privacy: .public) – \(self.window.range.upperBound.description, privacy: .public)")
+            logger.info("Scan done: \(timeline.photos.count, privacy: .public) dated photos; years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
         }
     }
 
+    private func rebuildNavigator(preferredYear: Int?) {
+        navigator = YearNavigator.build(timeline: timeline, today: today, weeks: weeks,
+                                        showEmptyYears: showEmptyYears, calculator: calculator)
+        yearsAgo = preferredYear.map { navigator.nearest(to: $0) } ?? navigator.initialYear
+        applyWindow()
+    }
+
     private func applyWindow() {
+        window = calculator.window(today: today, yearsAgo: yearsAgo, weeks: weeks)
         photos = timeline.photos(in: window.range)
         stepper = PhotoStepper(count: photos.count)
         prefetch()
@@ -114,7 +191,7 @@ final class ViewerModel {
         }
     }
 
-    // MARK: - Launch values
+    // MARK: Launch values
 
     private static func launchToday() -> LocalDateTime {
         #if DEBUG

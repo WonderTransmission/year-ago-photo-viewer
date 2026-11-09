@@ -16,9 +16,18 @@ public struct PhotoTimeline: Sendable {
 
     /// Photos whose date falls in `range`, in date order.
     public func photos(in range: ClosedRange<LocalDateTime>) -> [PhotoItem] {
+        Array(photos[indices(in: range)])
+    }
+
+    /// How many photos fall in `range`, without copying them.
+    public func count(in range: ClosedRange<LocalDateTime>) -> Int {
+        indices(in: range).count
+    }
+
+    private func indices(in range: ClosedRange<LocalDateTime>) -> Range<Int> {
         let start = firstIndex { $0.date >= range.lowerBound }
         let end = firstIndex { $0.date > range.upperBound }
-        return Array(photos[start..<end])
+        return start..<max(start, end)
     }
 
     /// Binary search for the first index where `predicate` becomes true.

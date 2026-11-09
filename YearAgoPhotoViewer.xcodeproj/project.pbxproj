@@ -17,22 +17,9 @@
 		A10000000000000000000F04 /* YearAgoCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = YearAgoCore; path = Packages/YearAgoCore; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A10000000000000000000E01 /* Exceptions for "App" folder in "YearAgoPhotoViewer" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				App.entitlements,
-			);
-			target = A10000000000000000000701 /* YearAgoPhotoViewer */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000501 /* App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A10000000000000000000E01 /* Exceptions for "App" folder in "YearAgoPhotoViewer" target */,
-			);
 			path = App;
 			sourceTree = "<group>";
 		};

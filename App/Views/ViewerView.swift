@@ -1,33 +1,27 @@
 import SwiftUI
 import YearAgoCore
 
-/// One year's photos: header, current photo with arrows, and caption.
+/// One year's photos: year bar, current photo with arrows, caption, and
+/// filmstrip.
 struct ViewerView: View {
     @Environment(ViewerModel.self) private var model
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            YearBar()
             Divider()
             ZStack {
                 content
-                arrows
+                if !model.stepper.isEmpty {
+                    photoArrows
+                }
             }
-            Divider()
-            caption
+            if !model.stepper.isEmpty {
+                Divider()
+                caption
+                FilmstripView()
+            }
         }
-    }
-
-    private var header: some View {
-        Text([
-            DisplayFormat.yearsAgo(model.window.yearsAgo),
-            DisplayFormat.range(model.window),
-            DisplayFormat.position(model.stepper),
-        ].joined(separator: " · "))
-        .font(.headline)
-        .monospacedDigit()
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -37,6 +31,8 @@ struct ViewerView: View {
                 Label("No Photos", systemImage: "photo.on.rectangle.angled")
             } description: {
                 Text("No photos from \(DisplayFormat.range(model.window)).")
+            } actions: {
+                NextYearButton()
             }
         } else if let photo = model.currentPhoto {
             PhotoView(photo: photo, loader: model.imageLoader)
@@ -45,17 +41,19 @@ struct ViewerView: View {
                 Label("That's All for \(String(model.displayedYear))", systemImage: "checkmark.circle")
             } description: {
                 Text("You've seen all \(DisplayFormat.position(model.stepper)) from \(DisplayFormat.range(model.window)).")
+            } actions: {
+                NextYearButton()
             }
         }
     }
 
-    private var arrows: some View {
+    private var photoArrows: some View {
         HStack {
-            Button("Previous Photo", systemImage: "chevron.left") { model.previous() }
+            Button("Previous Photo", systemImage: "chevron.left") { model.previousPhoto() }
                 .keyboardShortcut(.leftArrow, modifiers: [])
                 .disabled(!model.stepper.canGoBack)
             Spacer()
-            Button("Next Photo", systemImage: "chevron.right") { model.next() }
+            Button("Next Photo", systemImage: "chevron.right") { model.nextPhoto() }
                 .keyboardShortcut(.rightArrow, modifiers: [])
                 .disabled(!model.stepper.canGoForward)
         }
@@ -83,6 +81,94 @@ struct ViewerView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .frame(minHeight: 32)
+    }
+}
+
+/// "◀◀ Previous Year   2 years ago · Nov 1 – 8, 2024 · 12 of 37   [Year ▾]   Next Year ▶▶"
+private struct YearBar: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button("Previous Year", systemImage: "chevron.backward.2") { model.goToPreviousYear() }
+                .disabled(model.previousYear == nil)
+                .help("Previous year (⌘[)")
+
+            Spacer(minLength: 0)
+            Text([
+                DisplayFormat.yearsAgo(model.yearsAgo),
+                DisplayFormat.range(model.window),
+                DisplayFormat.position(model.stepper),
+            ].joined(separator: " · "))
+            .font(.headline)
+            .monospacedDigit()
+            .lineLimit(1)
+            Spacer(minLength: 0)
+
+            YearPicker()
+            Button { model.goToNextYear() } label: {
+                Label("Next Year", systemImage: "chevron.forward.2")
+                    .labelStyle(.titleAndIconTrailing)
+            }
+            .disabled(model.nextYear == nil)
+            .help("Next year (⌘])")
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+}
+
+/// Menu listing every offered year with its photo count.
+struct YearPicker: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        Menu {
+            ForEach(model.navigator.years, id: \.self) { years in
+                Button {
+                    model.goToYear(years)
+                } label: {
+                    let count = model.navigator.count(yearsAgo: years)
+                    let label = "\(DisplayFormat.yearsAgo(years)) (\(String(model.calendarYear(yearsAgo: years))))"
+                    if years == model.yearsAgo {
+                        Label(label, systemImage: "checkmark")
+                    } else {
+                        Text(label)
+                    }
+                    Text(count == 0 ? "No photos" : count == 1 ? "1 photo" : "\(count) photos")
+                }
+            }
+        } label: {
+            Text(String(model.displayedYear))
+        }
+        .fixedSize()
+        .help("Choose a year")
+    }
+}
+
+/// "Next Year" button for the end card and empty panel.
+private struct NextYearButton: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        if let next = model.nextYear {
+            Button("Next Year: \(String(model.calendarYear(yearsAgo: next)))") { model.goToNextYear() }
+                .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+private extension LabelStyle where Self == TitleAndIconTrailingLabelStyle {
+    static var titleAndIconTrailing: TitleAndIconTrailingLabelStyle { .init() }
+}
+
+/// Title first, icon after: for "Next Year ▶▶".
+private struct TitleAndIconTrailingLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.title
+            configuration.icon
+        }
     }
 }
 
