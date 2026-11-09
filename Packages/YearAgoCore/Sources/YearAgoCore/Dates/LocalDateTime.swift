@@ -65,6 +65,10 @@ public struct LocalDateTime: Comparable, Hashable, Sendable, CustomStringConvert
         return LocalDateTime(date)
     }
 
+    /// This value as a `Date` whose UTC fields equal the wall-clock fields.
+    /// Use it only for display, with a formatter set to the UTC time zone.
+    public var dateForDisplayInUTC: Date { floatingDate }
+
     public var description: String {
         let c = components
         return String(format: "%04d-%02d-%02d %02d:%02d:%02d",
