@@ -14,7 +14,7 @@ struct FilmstripView: View {
                             model.jump(to: index)
                         } label: {
                             ThumbnailView(photo: model.photos[index],
-                                          loader: model.thumbnailLoader,
+                                          images: model.thumbnails,
                                           isSelected: index == model.stepper.currentIndex)
                         }
                         .buttonStyle(.plain)
@@ -39,7 +39,7 @@ struct FilmstripView: View {
 
 private struct ThumbnailView: View {
     let photo: PhotoItem
-    let loader: ImageLoader
+    let images: ImageRepository
     let isSelected: Bool
 
     @State private var image: CGImage?
@@ -61,7 +61,7 @@ private struct ThumbnailView: View {
         }
         .opacity(isSelected ? 1 : 0.75)
         .task(id: photo.id) {
-            image = await loader.image(at: photo.url, maxPixelSize: ViewerModel.thumbnailPixelSize)
+            image = await images.image(for: photo, maxPixelSize: ViewerModel.thumbnailPixelSize)
         }
     }
 }

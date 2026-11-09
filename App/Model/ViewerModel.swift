@@ -73,8 +73,9 @@ final class ViewerModel {
     /// Drives the Sources panel.
     var isShowingSources = false
 
-    let imageLoader = ImageLoader()
-    let thumbnailLoader = ImageLoader(countLimit: 400)
+    /// Full-size images and filmstrip thumbnails, from files or Photos.
+    let images = ImageRepository(countLimit: 48)
+    let thumbnails = ImageRepository(countLimit: 400)
 
     private let settings = SettingsStore()
     private let access = FolderAccess()
@@ -91,6 +92,9 @@ final class ViewerModel {
     /// Increments per sync, so late progress updates from an old sync are ignored.
     private var syncGeneration = 0
     private var volumeObservers: [NSObjectProtocol] = []
+    private let photoLibrary = PhotoKitLibrary()
+    private var libraryObserver: LibraryChangeObserver?
+    private var librarySyncDelay: Task<Void, Never>?
     /// False until the index has been read once at launch.
     private var hasLoaded = false
 
@@ -212,12 +216,42 @@ final class ViewerModel {
 
     func setDateSource(_ dateSource: DateSourceKind, forSource id: Int64) {
         perform { try await $0.setDateSource(dateSource, forSource: id) }
+        // Library file names are fetched only when needed: resync to get them.
+        if dateSource == .fileName, source(id: id)?.kind == .photos {
+            enqueueSync([id])
+        }
     }
 
     /// Gives every source the default date setting.
     func applyDefaultDateSourceToAll() {
         let dateSource = defaultDateSource
         perform { try await $0.setDateSourceForAll(dateSource) }
+        if dateSource == .fileName {
+            enqueueSync(sources.filter { $0.kind == .photos }.map(\.id))
+        }
+    }
+
+    /// True once the Photos library is a source (it can be added once).
+    var hasPhotosLibrary: Bool { sources.contains { $0.kind == .photos } }
+
+    /// Asks for Photos access, then adds the library as a source.
+    func addPhotosLibrary() {
+        Task {
+            guard await PhotoKitLibrary.requestAccess() else {
+                errorMessage = "\(CoreInfo.appName) doesn't have access to Photos. Turn it on in System Settings › Privacy & Security › Photos."
+                return
+            }
+            do {
+                let source = try await index.addPhotosLibrarySource(name: "Photos Library",
+                                                                    dateSource: defaultDateSource)
+                try await index.setOnline(true, forSource: source.id)
+                observeLibrary(source.id)
+                await refresh(keepPosition: true)
+                enqueueSync([source.id])
+            } catch {
+                errorMessage = "Couldn't add the Photos library: \(error.localizedDescription)"
+            }
+        }
     }
 
     /// Reorders sources, as List's onMove reports it.
@@ -252,7 +286,7 @@ final class ViewerModel {
                                                  dateSource: defaultDateSource)
         }
         await refresh(keepPosition: false)
-        for source in sources where source.kind == .folder {
+        for source in sources {
             await reconnect(source)
         }
         await refresh(keepPosition: false)
@@ -260,8 +294,19 @@ final class ViewerModel {
         hasLoaded = true
     }
 
-    /// Resolves a folder source's bookmark and marks it online or offline.
+    /// Marks a source online or offline. Folders: resolves the bookmark.
+    /// The Photos library: checks access, and watches for changes.
     private func reconnect(_ source: SourceRecord) async {
+        if source.kind == .photos {
+            let authorized = PhotoKitLibrary.isAuthorized
+            if authorized {
+                observeLibrary(source.id)
+            } else {
+                libraryObserver = nil
+            }
+            try? await index.setOnline(authorized, forSource: source.id)
+            return
+        }
         var url: URL?
         if let debugFolder = debugFolders.first(where: { source.rootPath == FolderScanner.realPath($0.path) }) {
             url = debugFolder
@@ -293,6 +338,24 @@ final class ViewerModel {
     private func makeWatcher(_ id: Int64, _ url: URL) -> FolderWatcher {
         FolderWatcher(url: url) { [weak self] in
             Task { @MainActor in self?.enqueueSync([id]) }
+        }
+    }
+
+    /// Resyncs the library 5 seconds after it stops changing. Photos reports
+    /// many small changes, e.g. during iCloud syncing.
+    private func observeLibrary(_ id: Int64) {
+        guard libraryObserver == nil else { return }
+        libraryObserver = LibraryChangeObserver { [weak self] in
+            Task { @MainActor in self?.scheduleLibrarySync(id) }
+        }
+    }
+
+    private func scheduleLibrarySync(_ id: Int64) {
+        librarySyncDelay?.cancel()
+        librarySyncDelay = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            enqueueSync([id])
         }
     }
 
@@ -348,18 +411,29 @@ final class ViewerModel {
         }
         while !syncQueue.isEmpty {
             let id = syncQueue.removeFirst()
-            guard let source = source(id: id), source.isEnabled, let root = roots[id] else { continue }
+            guard let source = source(id: id), source.isEnabled else { continue }
+            let root = roots[id]
+            if source.kind == .folder, root == nil { continue }
+            if source.kind == .photos, !PhotoKitLibrary.isAuthorized {
+                try? await index.setOnline(false, forSource: id)
+                continue
+            }
             syncingSourceID = id
             scanProgress = nil
             syncGeneration += 1
             let generation = syncGeneration
             let start = ContinuousClock.now
+            let onProgress: @Sendable (ScanProgress) -> Void = { [weak self] progress in
+                Task { @MainActor in
+                    guard let self, self.syncGeneration == generation, self.syncingSourceID == id else { return }
+                    self.scanProgress = progress
+                }
+            }
             do {
-                let result = try await index.sync(sourceID: id, root: root) { [weak self] progress in
-                    Task { @MainActor in
-                        guard let self, self.syncGeneration == generation, self.syncingSourceID == id else { return }
-                        self.scanProgress = progress
-                    }
+                let result = if let root {
+                    try await index.sync(sourceID: id, root: root, onProgress: onProgress)
+                } else {
+                    try await index.syncLibrary(sourceID: id, library: photoLibrary, onProgress: onProgress)
                 }
                 logger.info("Sync of source \(id, privacy: .public) done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
             } catch PhotoIndexError.rootUnavailable {
@@ -443,12 +517,12 @@ final class ViewerModel {
     /// Decodes the next two photos ahead of time so stepping feels instant.
     private func prefetch() {
         let start = stepper.position + 1
-        let upcoming = photos.indices.filter { $0 >= start && $0 < start + 2 }.map { photos[$0].url }
+        let upcoming = photos.indices.filter { $0 >= start && $0 < start + 2 }.map { photos[$0] }
         guard !upcoming.isEmpty else { return }
-        let loader = imageLoader
+        let images = images
         Task {
-            for url in upcoming {
-                _ = await loader.image(at: url, maxPixelSize: Self.displayPixelSize)
+            for photo in upcoming {
+                _ = await images.image(for: photo, maxPixelSize: Self.displayPixelSize)
             }
         }
     }

@@ -35,9 +35,10 @@ struct SourcesView: View {
             Divider()
             HStack {
                 Button("Add Folder…", systemImage: "plus") { isAddingFolder = true }
-                Button("Add Photos Library", systemImage: "photo.on.rectangle") {}
-                    .disabled(true)
-                    .help("Coming in a later version")
+                Button("Add Photos Library", systemImage: "photo.on.rectangle") { model.addPhotosLibrary() }
+                    .disabled(model.hasPhotosLibrary)
+                    .help(model.hasPhotosLibrary ? "The Photos library is already a source"
+                                                 : "Show photos from your Mac's Photos library")
                 Button("Remove", systemImage: "minus") {
                     pendingRemoval = selection.flatMap(model.source(id:))
                 }
@@ -119,7 +120,11 @@ private struct SourceRow: View {
 
     @ViewBuilder
     private var status: some View {
-        if !source.isOnline {
+        if !source.isOnline, source.kind == .photos {
+            Button("No Access…") { PhotoKitLibrary.openPrivacySettings() }
+                .buttonStyle(.link)
+                .help("Turn on Photos access in System Settings › Privacy & Security › Photos, then relaunch.")
+        } else if !source.isOnline {
             Label("Offline", systemImage: "externaldrive.badge.xmark")
                 .foregroundStyle(.secondary)
                 .help("The folder can't be reached. Its index is kept until it returns.")

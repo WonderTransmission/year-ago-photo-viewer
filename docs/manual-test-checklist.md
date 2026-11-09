@@ -1,0 +1,57 @@
+# Manual Test Checklist
+
+Unit tests cover the core logic. These checks cover what tests can't reach:
+the real Photos library, permissions, drives, the menu bar item, and the
+widget. Run them before a release.
+
+Tip: copy the boxes into a release issue and tick them there.
+
+## Setup
+
+- [ ] Build and run the **YearAgoPhotoViewer** scheme from Xcode.
+- [ ] For a clean start, quit the app and delete
+  `~/Library/Containers/<bundle id>/Data/Library/Application Support/YearAgoPhotoViewer`.
+
+## Folders (M2–M6)
+
+- [ ] **Add folder.** Welcome screen → Add Folder… → choose a folder of photos.
+  The first index shows a progress bar, then the viewer.
+- [ ] **Step.** ← and → step through the year's photos. The last step shows the
+  end card. ⌘] and ⌘[ change the year.
+- [ ] **Relaunch.** Quit and relaunch. Photos appear at once, with no
+  full-window progress.
+- [ ] **Live change.** Copy a photo dated last year into the folder. It appears
+  within a few seconds.
+- [ ] **Second folder.** Sources… → Add Folder… Give it a different date
+  setting. Its photos merge into the timeline.
+- [ ] **Disable.** Untick a source. Its photos disappear at once. Tick it again.
+- [ ] **Drive.** Add a folder on an external drive, then eject the drive.
+  The source shows "Offline" and its photos disappear. Plug it back in:
+  the source comes back online.
+- [ ] **RAW pair.** A folder with `IMG_1.CR2` and `IMG_1.JPG` shows one photo
+  with a "RAW+JPEG" badge.
+- [ ] **Duplicate.** Copy a photo into a second source folder. It shows once.
+
+## Photos library (M7)
+
+- [ ] **Permission prompt.** Sources… → Add Photos Library. macOS asks for
+  Photos access. Allow it. The library indexes with progress.
+- [ ] **Photos appear.** Photos from this week last year appear, merged with
+  folder photos, sorted by date.
+- [ ] **Live Photo.** A Live Photo shows its still key frame (no motion, no
+  playback controls).
+- [ ] **RAW+JPEG asset.** An asset imported as RAW+JPEG shows once.
+- [ ] **Videos.** Videos from this week do not appear.
+- [ ] **iCloud.** A photo whose original is only in iCloud still loads,
+  perhaps after a short delay.
+- [ ] **Edit in Photos.** Change a photo's date in Photos (Image › Adjust Date
+  and Time). Within about 10 seconds it moves to its new date in the viewer.
+- [ ] **File name dates.** Set the Photos Library source to "File name".
+  Screenshots in the library appear by their file-name date. The first
+  switch fetches file names with progress; later switches are instant.
+- [ ] **Exported copy.** Export a library photo (unmodified original) to a
+  source folder. It shows once, not twice.
+- [ ] **Access denied.** In System Settings › Privacy & Security › Photos,
+  turn access off and relaunch. The source shows "No Access…", which opens
+  System Settings. No library photos appear; folder photos still do.
+- [ ] **Add twice.** Add Photos Library is disabled once the library is a source.

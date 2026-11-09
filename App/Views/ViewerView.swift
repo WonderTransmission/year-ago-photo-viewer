@@ -35,7 +35,7 @@ struct ViewerView: View {
                 NextYearButton()
             }
         } else if let photo = model.currentPhoto {
-            PhotoView(photo: photo, loader: model.imageLoader)
+            PhotoView(photo: photo, images: model.images)
         } else {
             ContentUnavailableView {
                 Label("That's All for \(String(model.displayedYear))", systemImage: "checkmark.circle")
@@ -189,7 +189,7 @@ private struct TitleAndIconTrailingLabelStyle: LabelStyle {
 /// Decodes and shows one photo, scaled to fit.
 struct PhotoView: View {
     let photo: PhotoItem
-    let loader: ImageLoader
+    let images: ImageRepository
 
     @State private var image: CGImage?
     @State private var failed = false
@@ -212,7 +212,7 @@ struct PhotoView: View {
         .task(id: photo.id) {
             image = nil
             failed = false
-            let decoded = await loader.image(at: photo.url, maxPixelSize: ViewerModel.displayPixelSize)
+            let decoded = await images.image(for: photo, maxPixelSize: ViewerModel.displayPixelSize)
             guard !Task.isCancelled else { return }
             image = decoded
             failed = decoded == nil

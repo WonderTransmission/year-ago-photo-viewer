@@ -52,8 +52,8 @@ public actor PhotoIndex {
 
     /// Internal so the source and derived-column extensions can use it.
     let database: Database
-    private let timeZone: TimeZone
-    private var isSyncing = false
+    let timeZone: TimeZone
+    var isSyncing = false
 
     /// Opens the index at `fileURL`, creating it and its folder if needed.
     /// Pass nil for a private in-memory index (tests).
@@ -228,36 +228,48 @@ public actor PhotoIndex {
     // MARK: - Queries
 
     /// Every visible photo from every source, in date order. Photos from
-    /// sources missing from `roots` are left out.
+    /// folder sources missing from `roots` are left out. Photos library
+    /// items need no root.
     /// - Parameter roots: each folder source's root URL, by source ID.
     public func loadTimeline(roots: [Int64: URL]) throws -> PhotoTimeline {
         let query = try database.prepare("""
-            SELECT source_id, locator, effective_date, is_raw,
-                   EXISTS (SELECT 1 FROM photos AS raw WHERE raw.pair_primary = photos.id)
-            FROM photos
-            WHERE is_visible = 1
-            ORDER BY effective_date, locator
+            SELECT p.source_id, p.locator, p.effective_date, p.is_raw,
+                   EXISTS (SELECT 1 FROM photos AS raw WHERE raw.pair_primary = p.id),
+                   s.kind, p.file_name
+            FROM photos p JOIN sources s ON s.id = p.source_id
+            WHERE p.is_visible = 1
+            ORDER BY p.effective_date, p.locator
             """)
         try query.bind([])
         var items: [PhotoItem] = []
         while try query.step() {
             let sourceID = query.int64(0)
-            guard let root = roots[sourceID] else { continue }
             let locator = query.text(1)
+            let isLibrary = query.text(5) == SourceRecord.Kind.photos.rawValue
+            let url: URL
+            if isLibrary {
+                url = PhotoItem.libraryURL(for: locator)
+            } else if let root = roots[sourceID] {
+                url = root.appending(path: locator, directoryHint: .notDirectory)
+            } else {
+                continue
+            }
             items.append(PhotoItem(
                 sourceID: sourceID,
-                url: root.appending(path: locator, directoryHint: .notDirectory),
+                url: url,
                 relativePath: locator,
                 kind: query.int64(3) != 0 ? .raw : .image,
                 date: LocalDateTime(seconds: query.int64(2)),
-                hasRawPartner: query.int64(4) != 0))
+                hasRawPartner: query.int64(4) != 0,
+                assetIdentifier: isLibrary ? locator : nil,
+                storedFileName: query.isNull(6) ? nil : query.text(6)))
         }
         return PhotoTimeline(presorted: items)
     }
 
     // MARK: - Internals
 
-    private func existingFiles(sourceID: Int64) throws -> [String: (byteSize: Int64, mtime: Int64?)] {
+    func existingFiles(sourceID: Int64) throws -> [String: (byteSize: Int64, mtime: Int64?)] {
         let query = try database.prepare("SELECT locator, byte_size, fs_mtime FROM photos WHERE source_id = ?")
         try query.bind([.int(sourceID)])
         var result: [String: (Int64, Int64?)] = [:]
@@ -267,7 +279,7 @@ public actor PhotoIndex {
         return result
     }
 
-    private func deleteFiles(sourceID: Int64, locators: [String]) throws {
+    func deleteFiles(sourceID: Int64, locators: [String]) throws {
         guard !locators.isEmpty else { return }
         let delete = try database.prepare("DELETE FROM photos WHERE source_id = ? AND locator = ?")
         try database.transaction {
@@ -277,7 +289,7 @@ public actor PhotoIndex {
         }
     }
 
-    private func upsert(_ records: [FileRecord], sourceID: Int64) throws {
+    func upsert(_ records: [FileRecord], sourceID: Int64) throws {
         guard !records.isEmpty else { return }
         let statement = try database.prepare("""
             INSERT INTO photos (source_id, locator, file_name, byte_size, fs_mtime,
@@ -285,10 +297,10 @@ public actor PhotoIndex {
                                 pixel_w, pixel_h, is_raw)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (source_id, locator) DO UPDATE SET
-                file_name = excluded.file_name,
+                file_name = COALESCE(excluded.file_name, photos.file_name),
                 byte_size = excluded.byte_size,
                 fs_mtime = excluded.fs_mtime,
-                date_file_name = excluded.date_file_name,
+                date_file_name = CASE WHEN excluded.file_name IS NULL THEN photos.date_file_name ELSE excluded.date_file_name END,
                 date_modified = excluded.date_modified,
                 date_created = excluded.date_created,
                 date_exif = excluded.date_exif,
@@ -300,8 +312,8 @@ public actor PhotoIndex {
         try database.transaction {
             for record in records {
                 try statement.run([
-                    .int(sourceID), .text(record.locator), .text(record.fileName),
-                    .int(record.byteSize), .optionalInt(record.fsMtime),
+                    .int(sourceID), .text(record.locator), record.fileName.map(SQLValue.text) ?? .null,
+                    .optionalInt(record.byteSize), .optionalInt(record.fsMtime),
                     .date(record.dateFileName), .date(record.dateModified),
                     .date(record.dateCreated), .date(record.dateExif),
                     .optionalInt(record.pixelWidth), .optionalInt(record.pixelHeight),
@@ -331,8 +343,8 @@ public actor PhotoIndex {
 /// One file's indexed metadata.
 struct FileRecord: Sendable {
     var locator: String
-    var fileName: String
-    var byteSize: Int64
+    var fileName: String?
+    var byteSize: Int64?
     var fsMtime: Int64?
     var dateFileName: LocalDateTime?
     var dateModified: LocalDateTime?

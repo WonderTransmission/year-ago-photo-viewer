@@ -178,6 +178,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 WonderTransmission. MIT License.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Year Ago Photo Viewer shows photos from your library that were taken this week in past years. Photos never leave your Mac.";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).YearAgoPhotoViewer";
 				PRODUCT_MODULE_NAME = YearAgoPhotoViewer;
@@ -193,6 +194,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 WonderTransmission. MIT License.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Year Ago Photo Viewer shows photos from your library that were taken this week in past years. Photos never leave your Mac.";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).YearAgoPhotoViewer";
 				PRODUCT_MODULE_NAME = YearAgoPhotoViewer;
