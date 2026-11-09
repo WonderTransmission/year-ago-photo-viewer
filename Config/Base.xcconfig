@@ -7,8 +7,22 @@
 BUNDLE_ID_PREFIX = com.example
 DEVELOPMENT_TEAM =
 CODE_SIGN_IDENTITY = -
+APP_GROUP_ID = group.com.example.yearago
 
 #include? "Local.xcconfig"
+
+// App Groups (used by the widget) need a development team. Without a team,
+// build with entitlements that leave the App Group out; the widget then
+// shows a setup message. SIGNING_KIND is "AdHoc" or the team ID.
+SIGNING_KIND = $(DEVELOPMENT_TEAM:default=AdHoc)
+APP_ENTITLEMENTS_AdHoc = App/App.entitlements
+WIDGET_ENTITLEMENTS_AdHoc = Widget/Widget.entitlements
+APP_ENTITLEMENTS = $(APP_ENTITLEMENTS_$(SIGNING_KIND):default=App/App+AppGroup.entitlements)
+WIDGET_ENTITLEMENTS = $(WIDGET_ENTITLEMENTS_$(SIGNING_KIND):default=Widget/Widget+AppGroup.entitlements)
+
+// Version, shared by the app and the widget.
+MARKETING_VERSION = 1.2.0
+CURRENT_PROJECT_VERSION = 3
 
 SDKROOT = macosx
 MACOSX_DEPLOYMENT_TARGET = 26.0
@@ -17,3 +31,4 @@ CODE_SIGN_STYLE = Automatic
 ENABLE_HARDENED_RUNTIME = YES
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 CLANG_ENABLE_MODULES = YES
+COPY_PHASE_STRIP = NO

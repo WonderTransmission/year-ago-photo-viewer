@@ -22,6 +22,8 @@ years. Open it to step through last year's photos from the past week. Press
   photos appear within seconds.
 - **Drives come and go.** A folder on an unplugged drive shows as offline and
   comes back when the drive does.
+- **At a glance.** An "On This Day" menu bar item shows a photo from a year
+  ago. A desktop widget shows one, three, or six photos.
 
 ![The Sources panel with two folders](docs/images/sources.png)
 
@@ -52,6 +54,18 @@ years. Open it to step through last year's photos from the past week. Press
    xcodebuild -project YearAgoPhotoViewer.xcodeproj \
      -scheme YearAgoPhotoViewer -configuration Release build
    ```
+
+### The widget and App Groups
+
+The widget reads a snapshot the app writes into a shared App Group folder.
+App Groups need a development team, so:
+
+- **Without a team,** the build leaves the App Group out. Everything works
+  except the widget, which shows a setup message.
+- **With a team,** the build picks entitlements that include the App Group
+  automatically (see `Config/Base.xcconfig`). Set `APP_GROUP_ID` in
+  `Local.xcconfig`; a Team-ID-prefixed ID such as `ABCDE12345.yearago`
+  avoids a macOS access prompt.
 
 ## Using it
 
@@ -105,6 +119,8 @@ Scripts/check-privacy.sh
 | `App/` | The macOS app: SwiftUI views, view model, PhotoKit and file access |
 | `Packages/YearAgoCore/` | Core logic with no UI: dates, windows, index, duplicates |
 | `Config/` | Shared build settings and the signing template |
+| `Widget/` | The WidgetKit extension |
+| `Packages/YearAgoCore/Sources/YearAgoSnapshot/` | Snapshot format shared by the app and widget |
 | `Scripts/` | Icon generator and privacy check |
 | `docs/` | Proposal, implementation plan, checklist, screenshots |
 

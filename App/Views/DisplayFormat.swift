@@ -45,6 +45,13 @@ enum DisplayFormat {
         }
     }
 
+    /// A short photo date for the widget, e.g. "Sat, Nov 1".
+    static func shortPhotoDate(_ date: LocalDateTime) -> String {
+        var style = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+        style.timeZone = .gmt
+        return date.dateForDisplayInUTC.formatted(style)
+    }
+
     /// "12 of 37", "37 photos", or "No photos".
     static func position(_ stepper: PhotoStepper) -> String {
         if let index = stepper.currentIndex {

@@ -11,5 +11,8 @@ DEVELOPMENT_TEAM =
 // Use "Apple Development" when DEVELOPMENT_TEAM is set; "-" for ad hoc.
 CODE_SIGN_IDENTITY = -
 
-// App Group shared by the app and the widget (used from milestone M10).
+// App Group shared by the app and the widget. Only used when
+// DEVELOPMENT_TEAM is set: without a team, the build leaves the App Group
+// out and the widget shows a setup message. A Team-ID-prefixed group
+// (e.g. ABCDE12345.yearago) avoids a macOS access prompt.
 APP_GROUP_ID = group.com.example.yearago

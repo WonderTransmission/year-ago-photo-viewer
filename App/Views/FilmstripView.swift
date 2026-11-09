@@ -9,8 +9,10 @@ struct FilmstripView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 6) {
-                    // Identify thumbnails by photo, not position: a reload can
-                    // shift photos to new positions.
+                    // Identify thumbnails by photo, not position: changing the
+                    // year or reloading puts different photos at each position.
+                    // Do not add .id(index) here: it would override this
+                    // identity and leave stale thumbnails on screen.
                     ForEach(Array(model.photos.enumerated()), id: \.element.id) { index, photo in
                         Button {
                             model.jump(to: index)
@@ -21,7 +23,6 @@ struct FilmstripView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Photo \(index + 1) of \(model.photos.count)")
-                        .id(index)
                     }
                 }
                 .padding(.horizontal)
@@ -31,8 +32,9 @@ struct FilmstripView: View {
             .frame(height: 80)
             .onChange(of: model.stepper.position) { _, position in
                 guard !model.photos.isEmpty else { return }
+                let photo = model.photos[min(position, model.photos.count - 1)]
                 withAnimation {
-                    proxy.scrollTo(min(position, model.photos.count - 1), anchor: .center)
+                    proxy.scrollTo(photo.id, anchor: .center)
                 }
             }
         }

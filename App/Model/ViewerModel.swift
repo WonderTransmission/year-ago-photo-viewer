@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import OSLog
 import YearAgoCore
+import YearAgoSnapshot
 
 private let logger = Logger(subsystem: "YearAgoPhotoViewer", category: "viewer")
 
@@ -79,6 +80,36 @@ final class ViewerModel {
         onThisDayIndex = next
     }
 
+    /// Handles a `yearago://` link from the widget: opens that year (or the
+    /// nearest offered year) and, if given, that photo.
+    func openDeepLink(_ url: URL) {
+        guard let link = WidgetDeepLink.parse(url) else { return }
+        goToYear(navigator.nearest(to: link.yearsAgo))
+        if let photoID = link.photoID, let index = photos.firstIndex(where: { $0.id == photoID }) {
+            jump(to: index)
+        }
+    }
+
+    /// Hands the widget's years to the snapshotter (debounced; skipped
+    /// when nothing changed).
+    private func updateWidget() {
+        guard hasLoaded, let snapshotter else { return }
+        let days = OnThisDay.years(count: WidgetSnapshotter.years, timeline: timeline, navigator: navigator,
+                                   today: today, weeks: weeks, calculator: calculator)
+        snapshotter.update(days: days, hasSources: !sources.isEmpty, today: today)
+    }
+
+    /// The App Group widget folder, or in debug builds the folder given by
+    /// -DebugWidgetFolder <path>.
+    private static func widgetFolder() -> URL? {
+        #if DEBUG
+        if let path = UserDefaults.standard.string(forKey: "DebugWidgetFolder") {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        #endif
+        return SharedContainer.widgetFolder
+    }
+
     /// Moves the main viewer to the menu bar's photo.
     func showOnThisDayInViewer() {
         guard let onThisDay else { return }
@@ -124,6 +155,8 @@ final class ViewerModel {
     /// Full-size images and filmstrip thumbnails, from files or Photos.
     let images = ImageRepository(countLimit: 48)
     let thumbnails = ImageRepository(countLimit: 400)
+    /// Writes the widget's snapshot. Nil until init finishes.
+    @ObservationIgnored private var snapshotter: WidgetSnapshotter?
 
     private let settings = SettingsStore()
     private let access = FolderAccess()
@@ -159,6 +192,7 @@ final class ViewerModel {
         index = Self.openIndex(debug: !debugFolders.isEmpty)
         observeVolumes()
         observeDayChange()
+        snapshotter = WidgetSnapshotter(folder: Self.widgetFolder(), images: images)
         Task { await start() }
     }
 
@@ -367,6 +401,7 @@ final class ViewerModel {
         await refresh(keepPosition: false)
         enqueueSync(sources.map(\.id))
         hasLoaded = true
+        updateWidget()
         #if DEBUG
         // -DebugShowSources YES opens the Sources panel, for screenshots.
         if UserDefaults.standard.bool(forKey: "DebugShowSources") {
@@ -604,6 +639,7 @@ final class ViewerModel {
         yearsAgo = preferredYear.map { navigator.nearest(to: $0) } ?? navigator.initialYear
         applyWindow()
         refreshOnThisDay()
+        updateWidget()
     }
 
     private func applyWindow() {

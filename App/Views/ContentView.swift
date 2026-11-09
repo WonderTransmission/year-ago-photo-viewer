@@ -50,6 +50,7 @@ struct ContentView: View {
                 model.addFolders(urls)
             }
         }
+        .onOpenURL { model.openDeepLink($0) }
         .sheet(isPresented: $model.isShowingSources) {
             SourcesView()
         }

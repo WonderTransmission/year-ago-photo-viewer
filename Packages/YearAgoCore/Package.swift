@@ -7,9 +7,13 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .library(name: "YearAgoCore", targets: ["YearAgoCore"]),
+        // Small library shared by the app and the widget extension: the
+        // widget snapshot format, deep links, and the App Group folder.
+        .library(name: "YearAgoSnapshot", targets: ["YearAgoSnapshot"]),
     ],
     targets: [
         .target(name: "YearAgoCore"),
-        .testTarget(name: "YearAgoCoreTests", dependencies: ["YearAgoCore"]),
+        .target(name: "YearAgoSnapshot"),
+        .testTarget(name: "YearAgoCoreTests", dependencies: ["YearAgoCore", "YearAgoSnapshot"]),
     ]
 )

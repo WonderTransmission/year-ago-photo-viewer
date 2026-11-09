@@ -71,3 +71,23 @@ Tip: copy the boxes into a release issue and tick them there.
   the menu bar item still works. Open in Viewer brings the window back.
 - [ ] **Hide.** Settings › untick "Show “On This Day” in the menu bar". The
   icon disappears. Closing the window now quits the app.
+
+## Widget (M10)
+
+The widget needs a development team (see the README). Set `DEVELOPMENT_TEAM`
+and `CODE_SIGN_IDENTITY = Apple Development` in `Config/Local.xcconfig`.
+
+- [ ] **Ad hoc build.** Without a team the app still builds and runs. The
+  widget, if added, says "Open Year Ago Photo Viewer to add photos."
+- [ ] **Gallery.** With a team, run the app once, then right-click the
+  desktop › Edit Widgets. "On This Day" appears in small, medium, and large.
+- [ ] **Small.** One photo from the viewer's first year, with its date.
+- [ ] **Medium.** One photo each from the first three years offered. With
+  "Show years with no photos" on, an empty year shows "No photos".
+- [ ] **Large.** Up to six photos from the first year in a 2 × 3 grid, with
+  the date range and photo count.
+- [ ] **Tap.** Clicking a photo opens the app at that photo.
+- [ ] **Updates.** Add a photo from last year to a source. Within a few
+  seconds of the app indexing it, the widget updates.
+- [ ] **Stale.** Quit the app before midnight. After midnight the widget
+  shows "As of <date>" until the app runs again.
