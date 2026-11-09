@@ -8,27 +8,26 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var model = model
         Form {
-            DateSourcePicker(selection: $model.dateSource)
-            WindowLengthPicker(selection: $model.weeks)
-            Toggle("Show years with no photos", isOn: $model.showEmptyYears)
-        }
-        .formStyle(.grouped)
-        .frame(width: 420)
-        .fixedSize()
-    }
-}
-
-/// Picker for where photo dates come from.
-struct DateSourcePicker: View {
-    @Binding var selection: DateSourceKind
-
-    var body: some View {
-        Picker("Date from", selection: $selection) {
-            ForEach(DateSourceKind.allCases, id: \.self) { kind in
-                Text(kind.displayName).tag(kind)
+            Section {
+                WindowLengthPicker(selection: $model.weeks)
+                Toggle("Show years with no photos", isOn: $model.showEmptyYears)
+            }
+            Section {
+                Picker("Default date for new sources", selection: $model.defaultDateSource) {
+                    ForEach(DateSourceKind.allCases, id: \.self) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .help(model.defaultDateSource.helpText)
+                Button("Manage Sources…") { model.isShowingSources = true }
+            } footer: {
+                Text("Each source has its own date setting in the Sources panel.")
+                    .foregroundStyle(.secondary)
             }
         }
-        .help(selection.helpText)
+        .formStyle(.grouped)
+        .frame(width: 440)
+        .fixedSize()
     }
 }
 

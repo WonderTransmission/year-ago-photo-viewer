@@ -1,7 +1,7 @@
 import SwiftUI
 import YearAgoCore
 
-/// The main window. Shows a welcome screen, scan progress, or the viewer.
+/// The main window. Shows a welcome screen, first-index progress, or the viewer.
 struct ContentView: View {
     @Environment(ViewerModel.self) private var model
 
@@ -9,62 +9,95 @@ struct ContentView: View {
         @Bindable var model = model
         Group {
             switch model.phase {
-            case .noFolder:
-                WelcomeView { model.isChoosingFolder = true }
+            case .loading:
+                Color.clear
+            case .noSources:
+                WelcomeView { model.isAddingFolder = true }
             case .scanning:
-                ScanProgressView(folderName: model.folderName ?? "folder", progress: model.scanProgress)
-            case .failed(let message):
-                ContentUnavailableView {
-                    Label("Can't Open Folder", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(message)
-                } actions: {
-                    Button("Choose Folder…") { model.isChoosingFolder = true }
-                }
+                ScanProgressView(
+                    sourceName: model.syncingSourceID.flatMap(model.source(id:))?.name ?? "photos",
+                    progress: model.scanProgress)
             case .ready:
                 ViewerView()
             }
         }
-        .frame(minWidth: 640, minHeight: 480)
-        .navigationTitle(model.folderName ?? CoreInfo.appName)
+        .frame(minWidth: 720, minHeight: 480)
+        .navigationTitle(CoreInfo.appName)
         .toolbar {
             ToolbarItemGroup {
-                DateSourcePicker(selection: $model.dateSource)
-                    .pickerStyle(.menu)
-                    .fixedSize()
+                if model.phase == .ready, let progress = model.scanProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help(DisplayFormat.progress(progress))
+                }
+                Button {
+                    model.isShowingSources = true
+                } label: {
+                    Label(model.enabledSourceCount == 1 ? "1 Source" : "\(model.enabledSourceCount) Sources",
+                          systemImage: "folder")
+                        .labelStyle(.titleAndIcon)
+                }
+                .help("Show, hide, and add photo sources")
+                DefaultDateMenu()
                 WindowLengthPicker(selection: $model.weeks)
                     .pickerStyle(.menu)
                     .fixedSize()
             }
-            if model.phase == .ready, let progress = model.scanProgress {
-                ToolbarItem {
-                    ProgressView()
-                        .controlSize(.small)
-                        .help(ScanProgressView.describe(progress))
-                }
-            }
-            ToolbarItem {
-                Button("Choose Folder…", systemImage: "folder") {
-                    model.isChoosingFolder = true
-                }
+        }
+        .fileImporter(isPresented: $model.isAddingFolder, allowedContentTypes: [.folder],
+                      allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result {
+                model.addFolders(urls)
             }
         }
-        .fileImporter(isPresented: $model.isChoosingFolder, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result {
-                model.chooseFolder(url)
-            }
+        .sheet(isPresented: $model.isShowingSources) {
+            SourcesView()
+        }
+        .alert("Something Went Wrong",
+               isPresented: Binding(get: { model.errorMessage != nil },
+                                    set: { if !$0 { model.errorMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(model.errorMessage ?? "")
         }
     }
 }
 
-/// Full-window progress for the first index of a folder.
+/// Toolbar menu: the default date setting for new sources, and "Apply to
+/// All Sources".
+private struct DefaultDateMenu: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        Menu {
+            Picker("Default Date for New Sources", selection: $model.defaultDateSource) {
+                ForEach(DateSourceKind.allCases, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind)
+                }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button("Apply “\(model.defaultDateSource.displayName)” to All Sources") {
+                model.applyDefaultDateSourceToAll()
+            }
+            .disabled(model.sources.isEmpty)
+        } label: {
+            Text("Default date: \(model.defaultDateSource.displayName)")
+        }
+        .fixedSize()
+        .help("The date setting for new sources. Each source can override it in the Sources panel.")
+    }
+}
+
+/// Full-window progress for the first index.
 private struct ScanProgressView: View {
-    let folderName: String
+    let sourceName: String
     let progress: ScanProgress?
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("Indexing “\(folderName)”")
+            Text("Indexing “\(sourceName)”")
                 .font(.headline)
             if let progress, progress.stage == .reading, let total = progress.total, total > 0 {
                 ProgressView(value: Double(progress.completed), total: Double(total))
@@ -72,7 +105,7 @@ private struct ScanProgressView: View {
             } else {
                 ProgressView()
             }
-            Text(progress.map(Self.describe) ?? "Starting…")
+            Text(progress.map(DisplayFormat.progress) ?? "Starting…")
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
             Text("This happens once. Later launches only check for changes.")
@@ -81,29 +114,19 @@ private struct ScanProgressView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    /// "Finding photos… 3,500 found" or "Reading photo details… 1,234 of 9,876".
-    static func describe(_ progress: ScanProgress) -> String {
-        switch progress.stage {
-        case .finding:
-            "Finding photos… \(progress.completed.formatted()) found"
-        case .reading:
-            "Reading photo details… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
-        }
-    }
 }
 
-/// Shown before any folder is chosen.
+/// Shown before any source is added.
 private struct WelcomeView: View {
-    let chooseFolder: () -> Void
+    let addFolder: () -> Void
 
     var body: some View {
         ContentUnavailableView {
-            Label("Choose a Photo Folder", systemImage: "photo.stack")
+            Label("Add a Photo Folder", systemImage: "photo.stack")
         } description: {
             Text("\(CoreInfo.appName) shows the photos you took this week in past years.")
         } actions: {
-            Button("Choose Folder…", action: chooseFolder)
+            Button("Add Folder…", action: addFolder)
                 .buttonStyle(.borderedProminent)
         }
     }

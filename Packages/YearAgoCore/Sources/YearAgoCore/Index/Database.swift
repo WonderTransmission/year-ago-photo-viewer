@@ -169,6 +169,13 @@ final class Statement {
         isNull(column) ? nil : int64(column)
     }
 
+    func blob(_ column: Int32) -> Data? {
+        guard !isNull(column) else { return nil }
+        let count = Int(sqlite3_column_bytes(handle, column))
+        guard count > 0, let bytes = sqlite3_column_blob(handle, column) else { return Data() }
+        return Data(bytes: bytes, count: count)
+    }
+
     func text(_ column: Int32) -> String {
         sqlite3_column_text(handle, column).map { String(cString: $0) } ?? ""
     }

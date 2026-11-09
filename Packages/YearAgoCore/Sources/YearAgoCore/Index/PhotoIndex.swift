@@ -30,16 +30,11 @@ public struct SyncResult: Equatable, Sendable {
     public var removed: Int
 }
 
-/// A folder source as stored in the index.
-public struct FolderSourceRecord: Equatable, Sendable {
-    public var id: Int64
-    public var name: String
-    public var rootPath: String
-    public var dateSource: DateSourceKind
-}
-
 public enum PhotoIndexError: Error {
     case syncAlreadyRunning
+    /// The source's folder is missing, e.g. its drive is unplugged. Nothing
+    /// was deleted.
+    case rootUnavailable
 }
 
 /// The persistent photo index. See implementation plan sections 6 and 7 (M4).
@@ -53,7 +48,8 @@ public actor PhotoIndex {
     /// Files per concurrent metadata-reading task.
     static let chunkSize = 128
 
-    private let database: Database
+    /// Internal so the source and derived-column extensions can use it.
+    let database: Database
     private let timeZone: TimeZone
     private var isSyncing = false
 
@@ -75,39 +71,6 @@ public actor PhotoIndex {
         self.timeZone = timeZone
     }
 
-    // MARK: - Sources
-
-    /// Finds the folder source for `rootPath`, or creates it.
-    public func folderSource(rootPath: String, name: String,
-                             defaultDateSource: DateSourceKind) throws -> FolderSourceRecord {
-        let find = try database.prepare(
-            "SELECT id, name, date_source FROM sources WHERE kind = 'folder' AND root_path = ?")
-        try find.bind([.text(rootPath)])
-        if try find.step() {
-            return FolderSourceRecord(id: find.int64(0), name: find.text(1), rootPath: rootPath,
-                                      dateSource: DateSourceKind(rawValue: find.text(2)) ?? defaultDateSource)
-        }
-        try database.prepare("""
-            INSERT INTO sources (kind, name, root_path, date_source, sort_order)
-            VALUES ('folder', ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sources))
-            """).run([.text(name), .text(rootPath), .text(defaultDateSource.rawValue)])
-        return FolderSourceRecord(id: database.lastInsertRowID, name: name, rootPath: rootPath,
-                                  dateSource: defaultDateSource)
-    }
-
-    /// Deletes every source except `id`, with its photos. Used while the app
-    /// supports a single folder (until M5).
-    public func removeSources(except id: Int64) throws {
-        try database.prepare("DELETE FROM sources WHERE id <> ?").run([.int(id)])
-    }
-
-    /// Changes which date a source uses. Takes effect without a rescan.
-    public func setDateSource(_ dateSource: DateSourceKind, forSource id: Int64) throws {
-        try database.prepare("UPDATE sources SET date_source = ? WHERE id = ?")
-            .run([.text(dateSource.rawValue), .int(id)])
-        try refreshDerived()
-    }
-
     // MARK: - Sync
 
     /// Brings the index for one folder source up to date with the disk.
@@ -115,13 +78,20 @@ public actor PhotoIndex {
     /// New and changed files have their metadata read, concurrently and off
     /// the actor. Rows for files that no longer exist are deleted.
     /// - Throws: `PhotoIndexError.syncAlreadyRunning` if another sync is in
-    ///   progress, or a database error.
+    ///   progress, `PhotoIndexError.rootUnavailable` if `root` is not a
+    ///   reachable folder (nothing is deleted), or a database error.
     public func sync(
         sourceID: Int64,
         root: URL,
         onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in }
     ) async throws -> SyncResult {
         guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
+        // An unplugged drive looks like an empty folder. Never treat it as
+        // "every file was deleted".
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else { throw PhotoIndexError.rootUnavailable }
         isSyncing = true
         defer { isSyncing = false }
 
@@ -192,8 +162,8 @@ public actor PhotoIndex {
 
     // MARK: - Queries
 
-    /// Every visible photo, in date order. Photos from sources missing from
-    /// `roots` are left out.
+    /// Every visible photo from every source, in date order. Photos from
+    /// sources missing from `roots` are left out.
     /// - Parameter roots: each folder source's root URL, by source ID.
     public func loadTimeline(roots: [Int64: URL]) throws -> PhotoTimeline {
         let query = try database.prepare("""
@@ -204,23 +174,17 @@ public actor PhotoIndex {
         try query.bind([])
         var items: [PhotoItem] = []
         while try query.step() {
-            guard let root = roots[query.int64(0)] else { continue }
+            let sourceID = query.int64(0)
+            guard let root = roots[sourceID] else { continue }
             let locator = query.text(1)
             items.append(PhotoItem(
+                sourceID: sourceID,
                 url: root.appending(path: locator, directoryHint: .notDirectory),
                 relativePath: locator,
                 kind: query.int64(3) != 0 ? .raw : .image,
                 date: LocalDateTime(seconds: query.int64(2))))
         }
         return PhotoTimeline(presorted: items)
-    }
-
-    /// Number of indexed files for a source, dated or not.
-    public func fileCount(sourceID: Int64) throws -> Int {
-        let query = try database.prepare("SELECT COUNT(*) FROM photos WHERE source_id = ?")
-        try query.bind([.int(sourceID)])
-        _ = try query.step()
-        return Int(query.int64(0))
     }
 
     // MARK: - Internals
@@ -276,29 +240,6 @@ public actor PhotoIndex {
                     .int(record.isRaw ? 1 : 0),
                 ])
             }
-        }
-    }
-
-    /// Recomputes `effective_date` and `is_visible` for every row.
-    /// M5 and M6 extend this with pairing and duplicate rules.
-    private func refreshDerived() throws {
-        try database.transaction {
-            try database.execute("""
-                UPDATE photos SET effective_date = CASE
-                    (SELECT date_source FROM sources WHERE sources.id = photos.source_id)
-                    WHEN 'fileName' THEN date_file_name
-                    WHEN 'modified' THEN date_modified
-                    WHEN 'created'  THEN date_created
-                    ELSE date_exif
-                END;
-
-                UPDATE photos SET is_visible = CASE
-                    WHEN effective_date IS NOT NULL AND EXISTS (
-                        SELECT 1 FROM sources s
-                        WHERE s.id = photos.source_id AND s.is_enabled = 1 AND s.is_online = 1)
-                    THEN 1 ELSE 0
-                END;
-                """)
         }
     }
 

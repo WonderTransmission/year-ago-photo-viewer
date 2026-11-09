@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OSLog
@@ -5,17 +6,19 @@ import YearAgoCore
 
 private let logger = Logger(subsystem: "YearAgoPhotoViewer", category: "viewer")
 
-/// State for the main window: the folder, settings, the year on screen,
+/// State for the main window: photo sources, settings, the year on screen,
 /// and the position within that year's photos.
 @MainActor
 @Observable
 final class ViewerModel {
     enum Phase: Equatable {
-        case noFolder
-        /// First index of a folder: nothing to show yet.
+        /// Reading the index at launch.
+        case loading
+        /// No sources yet: show the welcome screen.
+        case noSources
+        /// First index: sources exist but nothing is indexed yet.
         case scanning
         case ready
-        case failed(String)
     }
 
     /// Longest side, in pixels, for decoding the on-screen photo.
@@ -43,29 +46,16 @@ final class ViewerModel {
         }
     }
 
-    /// Where photo dates come from. The index stores every date kind, so
-    /// changing it needs no rescan.
-    var dateSource: DateSourceKind {
-        didSet {
-            guard dateSource != oldValue else { return }
-            settings.dateSource = dateSource
-            guard let sourceID else { return }
-            let dateSource = dateSource
-            Task {
-                do {
-                    try await index.setDateSource(dateSource, forSource: sourceID)
-                    try await reloadTimeline(preferredYear: yearsAgo, keepPosition: false)
-                } catch {
-                    logger.error("Changing date source failed: \(error.localizedDescription, privacy: .public)")
-                }
-            }
-        }
+    /// The date setting given to newly added sources.
+    var defaultDateSource: DateSourceKind {
+        didSet { settings.defaultDateSource = defaultDateSource }
     }
 
     // MARK: State
 
-    private(set) var phase: Phase = .noFolder
-    private(set) var folderURL: URL?
+    /// Every source, in the user's order.
+    private(set) var sources: [SourceRecord] = []
+    private(set) var sourceStats: [Int64: SourceStats] = [:]
     /// N: the year on screen.
     private(set) var yearsAgo = 1
     private(set) var window: DateWindow
@@ -73,10 +63,15 @@ final class ViewerModel {
     /// Photos in the current window, in date order.
     private(set) var photos: [PhotoItem] = []
     private(set) var stepper = PhotoStepper(count: 0)
-    /// Non-nil while the folder is being synced with the index.
+    /// The source being synced, and its progress.
+    private(set) var syncingSourceID: Int64?
     private(set) var scanProgress: ScanProgress?
-    /// Drives the folder picker. The menu command and toolbar both set it.
-    var isChoosingFolder = false
+    /// A problem to show the user, e.g. a folder that could not be added.
+    var errorMessage: String?
+    /// Drives the folder picker (toolbar, menu, welcome screen).
+    var isAddingFolder = false
+    /// Drives the Sources panel.
+    var isShowingSources = false
 
     let imageLoader = ImageLoader()
     let thumbnailLoader = ImageLoader(countLimit: 400)
@@ -86,35 +81,48 @@ final class ViewerModel {
     private let calculator = WindowCalculator()
     private let index: PhotoIndex
     private let today: LocalDateTime
-    private var sourceID: Int64?
+    private let debugFolders: [URL]
     private var timeline = PhotoTimeline.empty
-    private var openTask: Task<Void, Never>?
-    private var watcher: FolderWatcher?
+    /// Root URLs of reachable folder sources, by source ID.
+    private var roots: [Int64: URL] = [:]
+    private var watchers: [Int64: FolderWatcher] = [:]
+    private var syncQueue: [Int64] = []
     private var isSyncing = false
-    private var needsResync = false
     /// Increments per sync, so late progress updates from an old sync are ignored.
     private var syncGeneration = 0
+    private var volumeObservers: [NSObjectProtocol] = []
+    /// False until the index has been read once at launch.
+    private var hasLoaded = false
 
     init() {
         today = Self.launchToday()
         weeks = settings.weeks
         showEmptyYears = settings.showEmptyYears
-        dateSource = settings.dateSource
+        defaultDateSource = settings.defaultDateSource
         window = calculator.window(today: today, yearsAgo: 1, weeks: settings.weeks)
-
-        let debugFolder = Self.debugFolder()
-        index = Self.openIndex(debug: debugFolder != nil)
-        if let url = debugFolder ?? access.restore() {
-            open(url, preferredYear: nil)
-        }
+        debugFolders = Self.debugFolderArguments()
+        index = Self.openIndex(debug: !debugFolders.isEmpty)
+        observeVolumes()
+        Task { await start() }
     }
 
     // MARK: Derived values
 
-    var folderName: String? { folderURL?.lastPathComponent }
+    var phase: Phase {
+        if !hasLoaded { return .loading }
+        if sources.isEmpty { return .noSources }
+        let indexedFiles = sourceStats.values.reduce(0) { $0 + $1.files }
+        return indexedFiles == 0 && isSyncing ? .scanning : .ready
+    }
 
     var currentPhoto: PhotoItem? {
         stepper.currentIndex.map { photos[$0] }
+    }
+
+    var enabledSourceCount: Int { sources.filter(\.isEnabled).count }
+
+    func source(id: Int64) -> SourceRecord? {
+        sources.first { $0.id == id }
     }
 
     /// The calendar year shown, e.g. 2025 for "1 year ago" in 2026.
@@ -128,15 +136,7 @@ final class ViewerModel {
     var nextYear: Int? { navigator.next(after: yearsAgo) }
     var previousYear: Int? { navigator.previous(before: yearsAgo) }
 
-    // MARK: Actions
-
-    func chooseFolder(_ url: URL) {
-        do {
-            open(try access.adopt(url), preferredYear: nil)
-        } catch {
-            phase = .failed("Couldn't open “\(url.lastPathComponent)”: \(error.localizedDescription)")
-        }
-    }
+    // MARK: Photo and year navigation
 
     func nextPhoto() {
         stepper.next()
@@ -167,101 +167,238 @@ final class ViewerModel {
         applyWindow()
     }
 
-    // MARK: Opening and syncing
+    // MARK: Source actions
 
-    /// Shows what the index already knows about `url` at once, then syncs
-    /// it with the disk and starts watching it for changes.
-    private func open(_ url: URL, preferredYear: Int?) {
-        openTask?.cancel()
-        watcher = nil
-        folderURL = url
-        sourceID = nil
-        phase = .scanning
-        openTask = Task {
+    /// Adds folders the user picked. A folder that is already a source is
+    /// reconnected rather than added twice.
+    func addFolders(_ urls: [URL]) {
+        Task {
+            var added: [Int64] = []
+            for url in urls {
+                do {
+                    let bookmark = try access.bookmarkForPickedFolder(url)
+                    let source = try await index.addFolderSource(
+                        rootPath: FolderScanner.realPath(url.path), name: url.lastPathComponent,
+                        bookmark: bookmark, dateSource: defaultDateSource)
+                    access.track(url, for: source.id)
+                    connect(source.id, to: url)
+                    try await index.setOnline(true, forSource: source.id)
+                    added.append(source.id)
+                } catch {
+                    errorMessage = "Couldn't add “\(url.lastPathComponent)”: \(error.localizedDescription)"
+                }
+            }
+            await refresh(keepPosition: true)
+            enqueueSync(added)
+        }
+    }
+
+    func removeSource(_ id: Int64) {
+        disconnect(id)
+        access.stop(id)
+        perform { try await $0.removeSource(id) }
+    }
+
+    func renameSource(_ id: Int64, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != source(id: id)?.name else { return }
+        perform { try await $0.renameSource(id, to: trimmed) }
+    }
+
+    func setEnabled(_ isEnabled: Bool, forSource id: Int64) {
+        perform { try await $0.setEnabled(isEnabled, forSource: id) }
+        if isEnabled { enqueueSync([id]) }
+    }
+
+    func setDateSource(_ dateSource: DateSourceKind, forSource id: Int64) {
+        perform { try await $0.setDateSource(dateSource, forSource: id) }
+    }
+
+    /// Gives every source the default date setting.
+    func applyDefaultDateSourceToAll() {
+        let dateSource = defaultDateSource
+        perform { try await $0.setDateSourceForAll(dateSource) }
+    }
+
+    /// Reorders sources, as List's onMove reports it.
+    func moveSources(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        var ids = sources.map(\.id)
+        ids.move(fromOffsets: offsets, toOffset: destination)
+        sources.move(fromOffsets: offsets, toOffset: destination)
+        let order = ids
+        perform { try await $0.reorderSources(order) }
+    }
+
+    /// Runs an index change, then reloads sources and photos.
+    private func perform(_ change: @escaping @Sendable (PhotoIndex) async throws -> Void) {
+        let index = index
+        Task {
             do {
-                let source = try await index.folderSource(
-                    rootPath: FolderScanner.realPath(url.path),
-                    name: url.lastPathComponent, defaultDateSource: dateSource)
-                // One folder at a time until M5 adds multiple sources.
-                try await index.removeSources(except: source.id)
-                if source.dateSource != dateSource {
-                    try await index.setDateSource(dateSource, forSource: source.id)
-                }
-                guard !Task.isCancelled else { return }
-                sourceID = source.id
-                try await reloadTimeline(preferredYear: preferredYear, keepPosition: false)
-                if try await index.fileCount(sourceID: source.id) > 0 {
-                    phase = .ready
-                }
-                startWatching(url)
-                await sync()
+                try await change(index)
             } catch {
-                phase = .failed("Couldn't index “\(url.lastPathComponent)”: \(error.localizedDescription)")
+                errorMessage = error.localizedDescription
+            }
+            await refresh(keepPosition: true)
+        }
+    }
+
+    // MARK: Startup and connections
+
+    private func start() async {
+        await migrateLegacyBookmark()
+        for debugFolder in debugFolders {
+            _ = try? await index.addFolderSource(rootPath: FolderScanner.realPath(debugFolder.path),
+                                                 name: debugFolder.lastPathComponent, bookmark: nil,
+                                                 dateSource: defaultDateSource)
+        }
+        await refresh(keepPosition: false)
+        for source in sources where source.kind == .folder {
+            await reconnect(source)
+        }
+        await refresh(keepPosition: false)
+        enqueueSync(sources.map(\.id))
+        hasLoaded = true
+    }
+
+    /// Resolves a folder source's bookmark and marks it online or offline.
+    private func reconnect(_ source: SourceRecord) async {
+        var url: URL?
+        if let debugFolder = debugFolders.first(where: { source.rootPath == FolderScanner.realPath($0.path) }) {
+            url = debugFolder
+        } else if let bookmark = source.bookmark, let opened = access.open(bookmark: bookmark, for: source.id) {
+            url = opened.url
+            if let refreshed = opened.refreshed {
+                try? await index.setBookmark(refreshed, forSource: source.id)
             }
         }
+        let reachable = url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+        if let url, reachable {
+            connect(source.id, to: url)
+        } else {
+            disconnect(source.id)
+        }
+        try? await index.setOnline(reachable, forSource: source.id)
     }
 
-    /// Resyncs whenever anything under `url` changes.
-    private func startWatching(_ url: URL) {
-        watcher = FolderWatcher(url: url) { [weak self] in
-            Task { @MainActor in await self?.sync() }
+    private func connect(_ id: Int64, to url: URL) {
+        roots[id] = url
+        watchers[id] = makeWatcher(id, url)
+    }
+
+    private func disconnect(_ id: Int64) {
+        roots[id] = nil
+        watchers[id] = nil
+    }
+
+    private func makeWatcher(_ id: Int64, _ url: URL) -> FolderWatcher {
+        FolderWatcher(url: url) { [weak self] in
+            Task { @MainActor in self?.enqueueSync([id]) }
         }
     }
 
-    /// Syncs the current folder with the index, then reloads. Calls made
-    /// while a sync runs are folded into one follow-up sync.
-    private func sync() async {
-        guard sourceID != nil else { return }
-        guard !isSyncing else {
-            needsResync = true
-            return
+    /// Re-checks every folder source when a drive is mounted or unmounted.
+    private func observeVolumes() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+            volumeObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in await self?.refreshAvailability() }
+            })
         }
+    }
+
+    private func refreshAvailability() async {
+        let wasOnline = Set(sources.filter(\.isOnline).map(\.id))
+        for source in sources where source.kind == .folder {
+            await reconnect(source)
+        }
+        await refresh(keepPosition: true)
+        let cameBack = sources.filter { $0.isOnline && !wasOnline.contains($0.id) }.map(\.id)
+        enqueueSync(cameBack)
+    }
+
+    /// Moves the pre-M5 single-folder bookmark onto its source row.
+    private func migrateLegacyBookmark() async {
+        guard let bookmark = access.takeLegacyBookmark() else { return }
+        var isStale = false
+        guard let url = try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI],
+                                 relativeTo: nil, bookmarkDataIsStale: &isStale)
+        else { return }
+        _ = try? await index.addFolderSource(rootPath: FolderScanner.realPath(url.path),
+                                             name: url.lastPathComponent, bookmark: bookmark,
+                                             dateSource: defaultDateSource)
+    }
+
+    // MARK: Syncing
+
+    /// Queues sources for syncing. Syncs run one at a time.
+    private func enqueueSync(_ ids: [Int64]) {
+        for id in ids where !syncQueue.contains(id) {
+            syncQueue.append(id)
+        }
+        guard !isSyncing, !syncQueue.isEmpty else { return }
         isSyncing = true
+        Task { await runSyncQueue() }
+    }
+
+    private func runSyncQueue() async {
         defer {
             isSyncing = false
+            syncingSourceID = nil
             scanProgress = nil
         }
-
-        repeat {
-            needsResync = false
-            guard let sourceID, let folderURL else { return }
+        while !syncQueue.isEmpty {
+            let id = syncQueue.removeFirst()
+            guard let source = source(id: id), source.isEnabled, let root = roots[id] else { continue }
+            syncingSourceID = id
+            scanProgress = nil
             syncGeneration += 1
             let generation = syncGeneration
             let start = ContinuousClock.now
             do {
-                let result = try await index.sync(sourceID: sourceID, root: folderURL) { [weak self] progress in
+                let result = try await index.sync(sourceID: id, root: root) { [weak self] progress in
                     Task { @MainActor in
-                        guard let self, self.isSyncing, self.syncGeneration == generation else { return }
+                        guard let self, self.syncGeneration == generation, self.syncingSourceID == id else { return }
                         self.scanProgress = progress
                     }
                 }
-                logger.info("Sync done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
-                guard !Task.isCancelled, sourceID == self.sourceID else { return }
-                let isFirstLoad = phase == .scanning
-                try await reloadTimeline(preferredYear: isFirstLoad ? nil : yearsAgo, keepPosition: !isFirstLoad)
-                phase = .ready
-                logger.info("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
+                logger.info("Sync of source \(id, privacy: .public) done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
+            } catch PhotoIndexError.rootUnavailable {
+                logger.info("Source \(id, privacy: .public) is offline")
+                disconnect(id)
+                try? await index.setOnline(false, forSource: id)
             } catch {
-                logger.error("Sync failed: \(error.localizedDescription, privacy: .public)")
-                return
+                logger.error("Sync of source \(id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
-        } while needsResync
+            syncingSourceID = nil
+            await refresh(keepPosition: true)
+        }
+        logger.info("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
     }
 
-    /// Reloads photos from the index and rebuilds the year list.
-    /// - Parameter keepPosition: stay on the same photo (or end card) if it
-    ///   is still in the window.
-    private func reloadTimeline(preferredYear: Int?, keepPosition: Bool) async throws {
-        guard let sourceID, let folderURL else { return }
-        let currentID = currentPhoto?.id
-        let wasAtEnd = stepper.isAtEnd
-        timeline = try await index.loadTimeline(roots: [sourceID: folderURL])
-        rebuildNavigator(preferredYear: preferredYear)
-        guard keepPosition else { return }
-        if wasAtEnd {
-            stepper.moveToEnd()
-        } else if let currentID, let position = photos.firstIndex(where: { $0.id == currentID }) {
-            stepper.jump(to: position)
+    // MARK: Reloading
+
+    /// Reloads sources, counts, and photos from the index.
+    /// - Parameter keepPosition: stay on the same year and photo (or end
+    ///   card) if possible. The first time photos appear, the viewer opens
+    ///   at the initial year instead.
+    private func refresh(keepPosition: Bool) async {
+        do {
+            sources = try await index.sources()
+            sourceStats = try await index.sourceStats()
+            let hadPhotos = !timeline.photos.isEmpty
+            let currentID = currentPhoto?.id
+            let wasAtEnd = stepper.isAtEnd
+            timeline = try await index.loadTimeline(roots: roots)
+            let keep = keepPosition && hadPhotos
+            rebuildNavigator(preferredYear: keep ? yearsAgo : nil)
+            guard keep else { return }
+            if wasAtEnd {
+                stepper.moveToEnd()
+            } else if let currentID, let position = photos.firstIndex(where: { $0.id == currentID }) {
+                stepper.jump(to: position)
+            }
+        } catch {
+            logger.error("Reload failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -322,15 +459,16 @@ final class ViewerModel {
         return LocalDateTime(Date(), in: .current)
     }
 
-    private static func debugFolder() -> URL? {
+    private static func debugFolderArguments() -> [URL] {
         #if DEBUG
-        // e.g. -DebugFolderPath <path>. The sandbox only allows paths
+        // e.g. -DebugFolderPath <path>[:<path>…]. Adds those folders as
+        // sources in a separate temp index. The sandbox only allows paths
         // inside the app's container, so this is for development only.
-        if let path = UserDefaults.standard.string(forKey: "DebugFolderPath") {
-            return URL(fileURLWithPath: path, isDirectory: true)
+        if let paths = UserDefaults.standard.string(forKey: "DebugFolderPath") {
+            return paths.split(separator: ":").map { URL(fileURLWithPath: String($0), isDirectory: true) }
         }
         #endif
-        return nil
+        return []
     }
 }
 

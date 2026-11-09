@@ -21,15 +21,17 @@ struct YearAgoPhotoViewerApp: App {
     }
 }
 
-/// Menu bar commands: File > Choose Folder, the View menu settings, and a
-/// Go menu for photos and years.
+/// Menu bar commands: File > Add Folder and Sources, View settings, and a
+/// Go menu for years.
 private struct ViewerCommands: Commands {
     @Bindable var model: ViewerModel
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("Choose Folder…") { model.isChoosingFolder = true }
+            Button("Add Folder…") { model.isAddingFolder = true }
                 .keyboardShortcut("o")
+            Button("Sources…") { model.isShowingSources = true }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
         }
 
         CommandGroup(after: .toolbar) {
@@ -39,7 +41,7 @@ private struct ViewerCommands: Commands {
                     Text(weeks == 1 ? "1 Week" : "\(weeks) Weeks").tag(weeks)
                 }
             }
-            Picker("Date From", selection: $model.dateSource) {
+            Picker("Default Date for New Sources", selection: $model.defaultDateSource) {
                 ForEach(DateSourceKind.allCases, id: \.self) { kind in
                     Text(kind.displayName).tag(kind)
                 }

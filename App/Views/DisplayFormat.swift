@@ -25,6 +25,24 @@ enum DisplayFormat {
         return date.dateForDisplayInUTC.formatted(style)
     }
 
+    /// "Finding photos… 3,500 found" or "Reading photo details… 1,234 of 9,876".
+    static func progress(_ progress: ScanProgress) -> String {
+        switch progress.stage {
+        case .finding:
+            "Finding photos… \(progress.completed.formatted()) found"
+        case .reading:
+            "Reading photo details… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        }
+    }
+
+    /// "3,500 found" or "1,234 of 9,876", for tight spaces.
+    static func shortProgress(_ progress: ScanProgress) -> String {
+        switch progress.stage {
+        case .finding: "\(progress.completed.formatted()) found"
+        case .reading: "\(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        }
+    }
+
     /// "12 of 37", "37 photos", or "No photos".
     static func position(_ stepper: PhotoStepper) -> String {
         if let index = stepper.currentIndex {

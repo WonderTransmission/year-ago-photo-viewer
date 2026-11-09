@@ -68,6 +68,11 @@ struct ViewerView: View {
         HStack {
             if let photo = model.currentPhoto {
                 Text(DisplayFormat.photoDate(photo.date))
+                if let source = model.source(id: photo.sourceID) {
+                    Text("· \(source.name) (\(source.dateSource.displayName))")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Spacer()
                 Text(photo.fileName)
                     .foregroundStyle(.secondary)

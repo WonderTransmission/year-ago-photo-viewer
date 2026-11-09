@@ -38,7 +38,7 @@ import Testing
         try photo(root, "undated.jpg", exif: nil)
 
         let index = try makeIndex()
-        let source = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif)
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
         let result = try await index.sync(sourceID: source.id, root: root)
         #expect(result == SyncResult(scanned: 3, read: 3, removed: 0))
         #expect(try await index.fileCount(sourceID: source.id) == 3)
@@ -56,7 +56,7 @@ import Testing
         try photo(root, "b.jpg", exif: "2025:11:03 09:00:00")
 
         let index = try makeIndex()
-        let source = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif)
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
         _ = try await index.sync(sourceID: source.id, root: root)
         let again = try await index.sync(sourceID: source.id, root: root)
         #expect(again == SyncResult(scanned: 2, read: 0, removed: 0))
@@ -70,7 +70,7 @@ import Testing
         try photo(root, "delete.jpg", exif: "2025:11:03 09:00:00")
 
         let index = try makeIndex()
-        let source = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif)
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
         _ = try await index.sync(sourceID: source.id, root: root)
 
         try photo(root, "change.jpg", exif: "2025:11:07 18:00:00", modified: local(2025, 12, 2))
@@ -91,7 +91,7 @@ import Testing
         try photo(root, "IMG_0001.jpg", exif: "2023:11:04 12:00:00", modified: local(2025, 1, 5))
 
         let index = try makeIndex()
-        let source = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif)
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
         _ = try await index.sync(sourceID: source.id, root: root)
         var timeline = try await index.loadTimeline(roots: [source.id: root])
         #expect(timeline.photos.map(\.date) == [local(2023, 11, 4, 12)])
@@ -104,7 +104,7 @@ import Testing
         timeline = try await index.loadTimeline(roots: [source.id: root])
         #expect(timeline.photos.map(\.date) == [local(2025, 1, 2, 3), local(2025, 1, 5)])
 
-        let source2 = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif)
+        let source2 = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
         #expect(source2.id == source.id)
         #expect(source2.dateSource == .modified)
     }
@@ -119,7 +119,7 @@ import Testing
         var sourceID: Int64
         do {
             let index = try makeIndex(file: file)
-            sourceID = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif).id
+            sourceID = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif).id
             _ = try await index.sync(sourceID: sourceID, root: root)
         }
 
@@ -140,7 +140,7 @@ import Testing
         var sourceID: Int64
         do {
             let index = try makeIndex(file: file)
-            sourceID = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .modified).id
+            sourceID = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .modified).id
             _ = try await index.sync(sourceID: sourceID, root: root)
         }
 
@@ -152,7 +152,7 @@ import Testing
         #expect(timeline.photos.map(\.date) == [local(2025, 11, 3, 21)])
     }
 
-    @Test func removeOtherSourcesDeletesTheirPhotos() async throws {
+    @Test func removeSourceDeletesItsPhotos() async throws {
         let rootA = try Fixtures.makeTemporaryDirectory()
         let rootB = try Fixtures.makeTemporaryDirectory()
         defer { Fixtures.cleanUp(rootA); Fixtures.cleanUp(rootB) }
@@ -160,14 +160,15 @@ import Testing
         try photo(rootB, "b.jpg", exif: "2025:11:02 09:00:00")
 
         let index = try makeIndex()
-        let a = try await index.folderSource(rootPath: rootA.path, name: "A", defaultDateSource: .exif)
-        let b = try await index.folderSource(rootPath: rootB.path, name: "B", defaultDateSource: .exif)
+        let a = try await index.addFolderSource(rootPath: rootA.path, name: "A", bookmark: nil, dateSource: .exif)
+        let b = try await index.addFolderSource(rootPath: rootB.path, name: "B", bookmark: nil, dateSource: .exif)
         _ = try await index.sync(sourceID: a.id, root: rootA)
         _ = try await index.sync(sourceID: b.id, root: rootB)
 
-        try await index.removeSources(except: b.id)
+        try await index.removeSource(a.id)
         #expect(try await index.fileCount(sourceID: a.id) == 0)
         #expect(try await index.fileCount(sourceID: b.id) == 1)
+        #expect(try await index.sources().map(\.id) == [b.id])
     }
 
     @Test func reportsProgress() async throws {
@@ -177,7 +178,7 @@ import Testing
             try photo(root, "p\(i).jpg", exif: "2025:11:02 09:00:0\(i)")
         }
         let index = try makeIndex()
-        let source = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .exif)
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
         let log = ProgressLog()
         _ = try await index.sync(sourceID: source.id, root: root) { log.append($0) }
         let events = log.events
@@ -203,7 +204,7 @@ import Testing
             }
         }
         let index = try makeIndex()
-        let source = try await index.folderSource(rootPath: root.path, name: "root", defaultDateSource: .fileName)
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .fileName)
 
         let clock = ContinuousClock()
         var first: SyncResult?

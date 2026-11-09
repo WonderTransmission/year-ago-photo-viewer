@@ -8,7 +8,9 @@ struct SettingsStore {
     private enum Key {
         static let weeks = "windowWeeks"
         static let showEmptyYears = "showEmptyYears"
-        static let dateSource = "dateSource"
+        /// Before M5 this was the single folder's date source. It is now the
+        /// default for newly added sources.
+        static let defaultDateSource = "dateSource"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -16,7 +18,7 @@ struct SettingsStore {
         defaults.register(defaults: [
             Key.weeks: 1,
             Key.showEmptyYears: true,
-            Key.dateSource: DateSourceKind.exif.rawValue,
+            Key.defaultDateSource: DateSourceKind.exif.rawValue,
         ])
     }
 
@@ -34,8 +36,8 @@ struct SettingsStore {
         nonmutating set { defaults.set(newValue, forKey: Key.showEmptyYears) }
     }
 
-    var dateSource: DateSourceKind {
-        get { defaults.string(forKey: Key.dateSource).flatMap(DateSourceKind.init(rawValue:)) ?? .exif }
-        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.dateSource) }
+    var defaultDateSource: DateSourceKind {
+        get { defaults.string(forKey: Key.defaultDateSource).flatMap(DateSourceKind.init(rawValue:)) ?? .exif }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.defaultDateSource) }
     }
 }
