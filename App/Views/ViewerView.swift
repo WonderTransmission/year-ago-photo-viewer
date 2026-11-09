@@ -74,6 +74,15 @@ struct ViewerView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                if let badge = photo.rawBadge {
+                    Text(badge)
+                        .font(.caption.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: .capsule)
+                        .help(badge == "RAW" ? "A RAW file with no JPEG or HEIC partner"
+                                             : "Shown in place of its RAW file, which has the same name")
+                }
                 Text(photo.fileName)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

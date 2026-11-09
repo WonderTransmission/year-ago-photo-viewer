@@ -372,7 +372,31 @@ final class ViewerModel {
             syncingSourceID = nil
             await refresh(keepPosition: true)
         }
+        await findDuplicates()
         logger.info("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
+    }
+
+    /// Hashes same-size files across all reachable sources and hides
+    /// duplicates. Runs after each round of syncs.
+    private func findDuplicates() async {
+        syncGeneration += 1
+        let generation = syncGeneration
+        let start = ContinuousClock.now
+        do {
+            let hashed = try await index.findDuplicates(roots: roots) { [weak self] progress in
+                Task { @MainActor in
+                    guard let self, self.syncGeneration == generation, self.isSyncing else { return }
+                    self.scanProgress = progress
+                }
+            }
+            if hashed > 0 {
+                logger.info("Duplicate check hashed \(hashed, privacy: .public) files in \((ContinuousClock.now - start).description, privacy: .public)")
+            }
+        } catch {
+            logger.error("Duplicate check failed: \(error.localizedDescription, privacy: .public)")
+        }
+        scanProgress = nil
+        await refresh(keepPosition: true)
     }
 
     // MARK: Reloading

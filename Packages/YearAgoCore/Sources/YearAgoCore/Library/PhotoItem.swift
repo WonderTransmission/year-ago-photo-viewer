@@ -12,14 +12,26 @@ public struct PhotoItem: Identifiable, Hashable, Sendable {
     public var kind: MediaKind
     /// The date from the source's chosen date source.
     public var date: LocalDateTime
+    /// True for a JPEG/HEIC shown in place of its RAW partner.
+    public var hasRawPartner: Bool
 
-    public init(sourceID: Int64 = 0, url: URL, relativePath: String, kind: MediaKind, date: LocalDateTime) {
+    public init(sourceID: Int64 = 0, url: URL, relativePath: String, kind: MediaKind,
+                date: LocalDateTime, hasRawPartner: Bool = false) {
         self.sourceID = sourceID
         self.url = url
         self.relativePath = relativePath
         self.kind = kind
         self.date = date
+        self.hasRawPartner = hasRawPartner
     }
 
     public var fileName: String { url.lastPathComponent }
+
+    /// "RAW+JPEG", "RAW+HEIC", "RAW", or nil for an ordinary image.
+    public var rawBadge: String? {
+        if kind == .raw { return "RAW" }
+        guard hasRawPartner else { return nil }
+        let ext = url.pathExtension.lowercased()
+        return ext == "heic" || ext == "heif" ? "RAW+HEIC" : "RAW+JPEG"
+    }
 }

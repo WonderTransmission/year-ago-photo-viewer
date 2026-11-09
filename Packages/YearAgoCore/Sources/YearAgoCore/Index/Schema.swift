@@ -2,7 +2,7 @@
 enum Schema {
     /// The newest schema version. Bump it and add a migration step to change
     /// the schema.
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     /// Brings `database` up to `currentVersion`.
     static func migrate(_ database: Database) throws {
@@ -11,6 +11,9 @@ enum Schema {
         try database.transaction {
             if version < 1 {
                 try database.execute(version1)
+            }
+            if version < 2 {
+                try database.execute(version2)
             }
             try database.setUserVersion(currentVersion)
         }
@@ -59,5 +62,11 @@ enum Schema {
         CREATE INDEX photos_visible_date ON photos(is_visible, effective_date);
         CREATE INDEX photos_size         ON photos(byte_size);
         CREATE INDEX photos_capture      ON photos(date_exif, pixel_w, pixel_h);
+        """
+
+    /// M6: lookups for RAW partners and content duplicates.
+    private static let version2 = """
+        CREATE INDEX photos_pair ON photos(pair_primary);
+        CREATE INDEX photos_hash ON photos(content_hash);
         """
 }

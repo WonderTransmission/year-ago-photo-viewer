@@ -7,6 +7,8 @@ public struct ScanProgress: Equatable, Sendable {
         case finding
         /// Reading metadata from new and changed files.
         case reading
+        /// Hashing same-size files to find duplicates.
+        case hashing
     }
 
     public var stage: Stage
@@ -115,8 +117,71 @@ public actor PhotoIndex {
         try deleteFiles(sourceID: sourceID, locators: removed)
 
         try await readAndStore(changed, sourceID: sourceID, onProgress: onProgress)
+        if !changed.isEmpty || !removed.isEmpty {
+            try updatePairs(sourceID: sourceID)
+        }
         try refreshDerived()
         return SyncResult(scanned: files.count, read: changed.count, removed: removed.count)
+    }
+
+    /// Hashes files that might be duplicates, then regroups duplicates.
+    ///
+    /// Only files that share their byte size with another indexed file, and
+    /// have no hash yet, are read. A changed file loses its hash on sync, so
+    /// each file version is hashed once. Call after syncing sources.
+    /// - Parameter roots: root URLs of the reachable folder sources.
+    /// - Returns: how many files were hashed.
+    @discardableResult
+    public func findDuplicates(
+        roots: [Int64: URL],
+        onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in }
+    ) async throws -> Int {
+        guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        let query = try database.prepare("""
+            SELECT id, source_id, locator FROM photos
+            WHERE content_hash IS NULL AND byte_size IN (
+                SELECT byte_size FROM photos WHERE byte_size IS NOT NULL
+                GROUP BY byte_size HAVING COUNT(*) > 1)
+            """)
+        try query.bind([])
+        var candidates: [(id: Int64, url: URL)] = []
+        while try query.step() {
+            guard let root = roots[query.int64(1)] else { continue }
+            candidates.append((query.int64(0), root.appending(path: query.text(2), directoryHint: .notDirectory)))
+        }
+
+        let total = candidates.count
+        if total > 0 {
+            onProgress(ScanProgress(stage: .hashing, completed: 0, total: total))
+            let chunks = stride(from: 0, to: total, by: Self.chunkSize).map {
+                Array(candidates[$0..<min($0 + Self.chunkSize, total)])
+            }
+            let setHash = try database.prepare("UPDATE photos SET content_hash = ? WHERE id = ?")
+            try await withThrowingTaskGroup(of: [(Int64, Data?)].self) { group in
+                for chunk in chunks {
+                    group.addTask {
+                        try Task.checkCancellation()
+                        return chunk.map { ($0.id, ContentHasher.sha256(of: $0.url)) }
+                    }
+                }
+                var completed = 0
+                for try await hashes in group {
+                    try database.transaction {
+                        // Unreadable files keep a NULL hash and are retried next time.
+                        for case let (id, hash?) in hashes {
+                            try setHash.run([.blob(hash), .int(id)])
+                        }
+                    }
+                    completed += hashes.count
+                    onProgress(ScanProgress(stage: .hashing, completed: completed, total: total))
+                }
+            }
+        }
+        try refreshDerived()
+        return total
     }
 
     /// Walks the folder off the actor.
@@ -167,7 +232,9 @@ public actor PhotoIndex {
     /// - Parameter roots: each folder source's root URL, by source ID.
     public func loadTimeline(roots: [Int64: URL]) throws -> PhotoTimeline {
         let query = try database.prepare("""
-            SELECT source_id, locator, effective_date, is_raw FROM photos
+            SELECT source_id, locator, effective_date, is_raw,
+                   EXISTS (SELECT 1 FROM photos AS raw WHERE raw.pair_primary = photos.id)
+            FROM photos
             WHERE is_visible = 1
             ORDER BY effective_date, locator
             """)
@@ -182,7 +249,8 @@ public actor PhotoIndex {
                 url: root.appending(path: locator, directoryHint: .notDirectory),
                 relativePath: locator,
                 kind: query.int64(3) != 0 ? .raw : .image,
-                date: LocalDateTime(seconds: query.int64(2))))
+                date: LocalDateTime(seconds: query.int64(2)),
+                hasRawPartner: query.int64(4) != 0))
         }
         return PhotoTimeline(presorted: items)
     }

@@ -32,6 +32,8 @@ enum DisplayFormat {
             "Finding photos… \(progress.completed.formatted()) found"
         case .reading:
             "Reading photo details… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        case .hashing:
+            "Checking for duplicates… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
         }
     }
 
@@ -39,7 +41,7 @@ enum DisplayFormat {
     static func shortProgress(_ progress: ScanProgress) -> String {
         switch progress.stage {
         case .finding: "\(progress.completed.formatted()) found"
-        case .reading: "\(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        case .reading, .hashing: "\(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
         }
     }
 
