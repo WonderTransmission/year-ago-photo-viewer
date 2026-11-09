@@ -173,6 +173,13 @@ product, `YearAgoSnapshot`, keeps the widget binary small.
 
 ## 6. Database schema
 
+The authoritative schema is `Packages/YearAgoCore/Sources/YearAgoCore/Index/Schema.swift`.
+It adds two things to the sketch below:
+
+- **`meta` table.** Key-value pairs, such as the time zone file dates were
+  converted with.
+- **`sources.root_path`.** A folder's resolved path, used to recognize it.
+
 ```sql
 CREATE TABLE sources (
   id            INTEGER PRIMARY KEY,
@@ -241,11 +248,11 @@ copies therefore never block a copy from an enabled source.
 
 ### 6.2 Viewer queries
 
-- **Photos in a window.** `WHERE is_visible = 1 AND effective_date BETWEEN ?
-  AND ? ORDER BY effective_date`.
-- **Oldest photo.** `SELECT MIN(effective_date) WHERE is_visible = 1`.
-- **Counts per year.** One indexed `COUNT(*)` per N. N rarely exceeds 30, so
-  this is fast.
+As built in M4, the app loads all visible rows once, in date order:
+`WHERE is_visible = 1 ORDER BY effective_date, locator`. It does this after
+each sync or setting change. The in-memory `PhotoTimeline` then answers
+window, oldest-photo, and per-year-count queries by binary search. Loading
+100,000 rows takes about 0.25 s.
 
 ## 7. Milestones
 

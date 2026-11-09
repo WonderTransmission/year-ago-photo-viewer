@@ -40,6 +40,15 @@ import Testing
         #expect(stepper.position == 0)
     }
 
+    @Test func moveToEnd() {
+        var stepper = PhotoStepper(count: 3)
+        stepper.moveToEnd()
+        #expect(stepper.isAtEnd)
+        var empty = PhotoStepper(count: 0)
+        empty.moveToEnd()
+        #expect(empty.position == 0)
+    }
+
     @Test func jumpIgnoresOutOfRange() {
         var stepper = PhotoStepper(count: 5)
         stepper.jump(to: 3)

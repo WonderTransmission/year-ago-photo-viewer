@@ -9,6 +9,11 @@ public struct PhotoTimeline: Sendable {
         }
     }
 
+    /// Trusts that `photos` is already sorted by date, then relative path.
+    public init(presorted photos: [PhotoItem]) {
+        self.photos = photos
+    }
+
     public static let empty = PhotoTimeline([])
 
     /// The date of the oldest photo, if any.

@@ -12,6 +12,7 @@ private let logger = Logger(subsystem: "YearAgoPhotoViewer", category: "viewer")
 final class ViewerModel {
     enum Phase: Equatable {
         case noFolder
+        /// First index of a folder: nothing to show yet.
         case scanning
         case ready
         case failed(String)
@@ -42,12 +43,22 @@ final class ViewerModel {
         }
     }
 
-    /// Where photo dates come from. Changing it rescans the folder.
+    /// Where photo dates come from. The index stores every date kind, so
+    /// changing it needs no rescan.
     var dateSource: DateSourceKind {
         didSet {
             guard dateSource != oldValue else { return }
             settings.dateSource = dateSource
-            if let folderURL { load(folderURL, preferredYear: yearsAgo) }
+            guard let sourceID else { return }
+            let dateSource = dateSource
+            Task {
+                do {
+                    try await index.setDateSource(dateSource, forSource: sourceID)
+                    try await reloadTimeline(preferredYear: yearsAgo, keepPosition: false)
+                } catch {
+                    logger.error("Changing date source failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         }
     }
 
@@ -62,6 +73,8 @@ final class ViewerModel {
     /// Photos in the current window, in date order.
     private(set) var photos: [PhotoItem] = []
     private(set) var stepper = PhotoStepper(count: 0)
+    /// Non-nil while the folder is being synced with the index.
+    private(set) var scanProgress: ScanProgress?
     /// Drives the folder picker. The menu command and toolbar both set it.
     var isChoosingFolder = false
 
@@ -71,9 +84,16 @@ final class ViewerModel {
     private let settings = SettingsStore()
     private let access = FolderAccess()
     private let calculator = WindowCalculator()
+    private let index: PhotoIndex
     private let today: LocalDateTime
+    private var sourceID: Int64?
     private var timeline = PhotoTimeline.empty
-    private var loadTask: Task<Void, Never>?
+    private var openTask: Task<Void, Never>?
+    private var watcher: FolderWatcher?
+    private var isSyncing = false
+    private var needsResync = false
+    /// Increments per sync, so late progress updates from an old sync are ignored.
+    private var syncGeneration = 0
 
     init() {
         today = Self.launchToday()
@@ -81,8 +101,11 @@ final class ViewerModel {
         showEmptyYears = settings.showEmptyYears
         dateSource = settings.dateSource
         window = calculator.window(today: today, yearsAgo: 1, weeks: settings.weeks)
-        if let url = Self.debugFolder() ?? access.restore() {
-            load(url, preferredYear: nil)
+
+        let debugFolder = Self.debugFolder()
+        index = Self.openIndex(debug: debugFolder != nil)
+        if let url = debugFolder ?? access.restore() {
+            open(url, preferredYear: nil)
         }
     }
 
@@ -109,7 +132,7 @@ final class ViewerModel {
 
     func chooseFolder(_ url: URL) {
         do {
-            load(try access.adopt(url), preferredYear: nil)
+            open(try access.adopt(url), preferredYear: nil)
         } catch {
             phase = .failed("Couldn't open “\(url.lastPathComponent)”: \(error.localizedDescription)")
         }
@@ -144,23 +167,101 @@ final class ViewerModel {
         applyWindow()
     }
 
-    // MARK: Loading
+    // MARK: Opening and syncing
 
-    /// Scans `url`. Afterwards opens `preferredYear` (or the nearest offered
-    /// year), or the initial year when nil.
-    private func load(_ url: URL, preferredYear: Int?) {
+    /// Shows what the index already knows about `url` at once, then syncs
+    /// it with the disk and starts watching it for changes.
+    private func open(_ url: URL, preferredYear: Int?) {
+        openTask?.cancel()
+        watcher = nil
         folderURL = url
+        sourceID = nil
         phase = .scanning
-        loadTask?.cancel()
-        let source = dateSource
-        loadTask = Task {
-            let timeline = await FolderPhotoLoader.load(folder: url, dateSource: source)
-            guard !Task.isCancelled else { return }
-            self.timeline = timeline
-            rebuildNavigator(preferredYear: preferredYear)
-            phase = .ready
-            // Counts and dates only: never log paths or file names.
-            logger.info("Scan done: \(timeline.photos.count, privacy: .public) dated photos; years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
+        openTask = Task {
+            do {
+                let source = try await index.folderSource(
+                    rootPath: FolderScanner.realPath(url.path),
+                    name: url.lastPathComponent, defaultDateSource: dateSource)
+                // One folder at a time until M5 adds multiple sources.
+                try await index.removeSources(except: source.id)
+                if source.dateSource != dateSource {
+                    try await index.setDateSource(dateSource, forSource: source.id)
+                }
+                guard !Task.isCancelled else { return }
+                sourceID = source.id
+                try await reloadTimeline(preferredYear: preferredYear, keepPosition: false)
+                if try await index.fileCount(sourceID: source.id) > 0 {
+                    phase = .ready
+                }
+                startWatching(url)
+                await sync()
+            } catch {
+                phase = .failed("Couldn't index “\(url.lastPathComponent)”: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Resyncs whenever anything under `url` changes.
+    private func startWatching(_ url: URL) {
+        watcher = FolderWatcher(url: url) { [weak self] in
+            Task { @MainActor in await self?.sync() }
+        }
+    }
+
+    /// Syncs the current folder with the index, then reloads. Calls made
+    /// while a sync runs are folded into one follow-up sync.
+    private func sync() async {
+        guard sourceID != nil else { return }
+        guard !isSyncing else {
+            needsResync = true
+            return
+        }
+        isSyncing = true
+        defer {
+            isSyncing = false
+            scanProgress = nil
+        }
+
+        repeat {
+            needsResync = false
+            guard let sourceID, let folderURL else { return }
+            syncGeneration += 1
+            let generation = syncGeneration
+            let start = ContinuousClock.now
+            do {
+                let result = try await index.sync(sourceID: sourceID, root: folderURL) { [weak self] progress in
+                    Task { @MainActor in
+                        guard let self, self.isSyncing, self.syncGeneration == generation else { return }
+                        self.scanProgress = progress
+                    }
+                }
+                logger.info("Sync done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
+                guard !Task.isCancelled, sourceID == self.sourceID else { return }
+                let isFirstLoad = phase == .scanning
+                try await reloadTimeline(preferredYear: isFirstLoad ? nil : yearsAgo, keepPosition: !isFirstLoad)
+                phase = .ready
+                logger.info("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
+            } catch {
+                logger.error("Sync failed: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+        } while needsResync
+    }
+
+    /// Reloads photos from the index and rebuilds the year list.
+    /// - Parameter keepPosition: stay on the same photo (or end card) if it
+    ///   is still in the window.
+    private func reloadTimeline(preferredYear: Int?, keepPosition: Bool) async throws {
+        guard let sourceID, let folderURL else { return }
+        let currentID = currentPhoto?.id
+        let wasAtEnd = stepper.isAtEnd
+        timeline = try await index.loadTimeline(roots: [sourceID: folderURL])
+        rebuildNavigator(preferredYear: preferredYear)
+        guard keepPosition else { return }
+        if wasAtEnd {
+            stepper.moveToEnd()
+        } else if let currentID, let position = photos.firstIndex(where: { $0.id == currentID }) {
+            stepper.jump(to: position)
         }
     }
 
@@ -192,6 +293,23 @@ final class ViewerModel {
     }
 
     // MARK: Launch values
+
+    /// Opens the index in Application Support, or an in-memory index if
+    /// that fails. Debug-folder runs use a separate index in temp.
+    private static func openIndex(debug: Bool) -> PhotoIndex {
+        do {
+            let folder = debug
+                ? FileManager.default.temporaryDirectory.appendingPathComponent("YearAgoPhotoViewer-debug")
+                : try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                              appropriateFor: nil, create: true)
+                    .appendingPathComponent("YearAgoPhotoViewer")
+            return try PhotoIndex(fileURL: folder.appendingPathComponent("Index.sqlite"))
+        } catch {
+            logger.error("Opening the index failed, using memory: \(error.localizedDescription, privacy: .public)")
+            // An in-memory database cannot fail to open in practice.
+            return try! PhotoIndex(fileURL: nil)
+        }
+    }
 
     private static func launchToday() -> LocalDateTime {
         #if DEBUG

@@ -32,6 +32,11 @@ public struct PhotoStepper: Equatable, Sendable {
         if canGoBack { position -= 1 }
     }
 
+    /// Moves to the end card. Does nothing when empty.
+    public mutating func moveToEnd() {
+        if count > 0 { position = count }
+    }
+
     /// Jumps to a photo. Out-of-range indexes are ignored.
     public mutating func jump(to index: Int) {
         if (0..<count).contains(index) { position = index }
