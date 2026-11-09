@@ -32,6 +32,10 @@ private struct ViewerCommands: Commands {
                 .keyboardShortcut("o")
             Button("Sources…") { model.isShowingSources = true }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+            Divider()
+            Button(model.revealTitle) { model.revealCurrentPhoto() }
+                .keyboardShortcut("r")
+                .disabled(model.currentPhoto == nil)
         }
 
         CommandGroup(after: .toolbar) {
@@ -50,6 +54,13 @@ private struct ViewerCommands: Commands {
         }
 
         CommandMenu("Go") {
+            // Arrow keys also work in the window; these menu items document
+            // them without stealing arrows from text fields.
+            Button("Previous Photo") { model.previousPhoto() }
+                .disabled(!model.stepper.canGoBack)
+            Button("Next Photo") { model.nextPhoto() }
+                .disabled(!model.stepper.canGoForward)
+            Divider()
             Button("Previous Year") { model.goToPreviousYear() }
                 .keyboardShortcut("[")
                 .disabled(model.previousYear == nil)

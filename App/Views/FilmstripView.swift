@@ -9,11 +9,13 @@ struct FilmstripView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 6) {
-                    ForEach(model.photos.indices, id: \.self) { index in
+                    // Identify thumbnails by photo, not position: a reload can
+                    // shift photos to new positions.
+                    ForEach(Array(model.photos.enumerated()), id: \.element.id) { index, photo in
                         Button {
                             model.jump(to: index)
                         } label: {
-                            ThumbnailView(photo: model.photos[index],
+                            ThumbnailView(photo: photo,
                                           images: model.thumbnails,
                                           isSelected: index == model.stepper.currentIndex)
                         }
@@ -61,7 +63,11 @@ private struct ThumbnailView: View {
         }
         .opacity(isSelected ? 1 : 0.75)
         .task(id: photo.id) {
-            image = await images.image(for: photo, maxPixelSize: ViewerModel.thumbnailPixelSize)
+            image = nil
+            let loaded = await images.image(for: photo, maxPixelSize: ViewerModel.thumbnailPixelSize)
+            // A cancelled load belongs to a previous photo: drop it.
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }

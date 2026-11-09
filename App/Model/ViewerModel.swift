@@ -81,7 +81,8 @@ final class ViewerModel {
     private let access = FolderAccess()
     private let calculator = WindowCalculator()
     private let index: PhotoIndex
-    private let today: LocalDateTime
+    /// Today's date. Updated at midnight while the app runs.
+    private var today: LocalDateTime
     private let debugFolders: [URL]
     private var timeline = PhotoTimeline.empty
     /// Root URLs of reachable folder sources, by source ID.
@@ -99,14 +100,16 @@ final class ViewerModel {
     private var hasLoaded = false
 
     init() {
-        today = Self.launchToday()
+        let launchDay = Self.launchToday()
+        today = launchDay
         weeks = settings.weeks
         showEmptyYears = settings.showEmptyYears
         defaultDateSource = settings.defaultDateSource
-        window = calculator.window(today: today, yearsAgo: 1, weeks: settings.weeks)
+        window = WindowCalculator().window(today: launchDay, yearsAgo: 1, weeks: SettingsStore().weeks)
         debugFolders = Self.debugFolderArguments()
         index = Self.openIndex(debug: !debugFolders.isEmpty)
         observeVolumes()
+        observeDayChange()
         Task { await start() }
     }
 
@@ -234,6 +237,29 @@ final class ViewerModel {
     /// True once the Photos library is a source (it can be added once).
     var hasPhotosLibrary: Bool { sources.contains { $0.kind == .photos } }
 
+    /// True when no source can show photos: none enabled, or all offline.
+    var hasNoActiveSource: Bool {
+        !sources.isEmpty && !sources.contains { $0.isEnabled && $0.isOnline }
+    }
+
+    /// "Show in Finder" for files, "Open Photos" for library items.
+    var revealTitle: String {
+        currentPhoto?.isLibraryAsset == true ? "Open Photos" : "Show in Finder"
+    }
+
+    /// Reveals the current photo: selects the file in Finder, or opens the
+    /// Photos app for library items (PhotoKit cannot select an asset there).
+    func revealCurrentPhoto() {
+        guard let photo = currentPhoto else { return }
+        if photo.isLibraryAsset {
+            if let photosApp = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Photos") {
+                NSWorkspace.shared.openApplication(at: photosApp, configuration: NSWorkspace.OpenConfiguration())
+            }
+        } else {
+            NSWorkspace.shared.activateFileViewerSelecting([photo.url])
+        }
+    }
+
     /// Asks for Photos access, then adds the library as a source.
     func addPhotosLibrary() {
         Task {
@@ -292,6 +318,12 @@ final class ViewerModel {
         await refresh(keepPosition: false)
         enqueueSync(sources.map(\.id))
         hasLoaded = true
+        #if DEBUG
+        // -DebugShowSources YES opens the Sources panel, for screenshots.
+        if UserDefaults.standard.bool(forKey: "DebugShowSources") {
+            isShowingSources = true
+        }
+        #endif
     }
 
     /// Marks a source online or offline. Folders: resolves the bookmark.
@@ -360,6 +392,23 @@ final class ViewerModel {
     }
 
     /// Re-checks every folder source when a drive is mounted or unmounted.
+    /// At midnight, moves every window forward a day, keeping the year.
+    private func observeDayChange() {
+        volumeObservers.append(NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.dayDidChange() }
+        })
+    }
+
+    private func dayDidChange() {
+        let newToday = Self.launchToday()
+        guard newToday.startOfDay != today.startOfDay else { return }
+        today = newToday
+        rebuildNavigator(preferredYear: yearsAgo)
+        logger.info("Day changed; windows moved forward")
+    }
+
     private func observeVolumes() {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {

@@ -26,7 +26,15 @@ struct ViewerView: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.stepper.isEmpty {
+        if model.hasNoActiveSource {
+            ContentUnavailableView {
+                Label("No Sources Available", systemImage: "folder.badge.questionmark")
+            } description: {
+                Text("Every source is turned off or offline.")
+            } actions: {
+                Button("Open Sources…") { model.isShowingSources = true }
+            }
+        } else if model.stepper.isEmpty {
             ContentUnavailableView {
                 Label("No Photos", systemImage: "photo.on.rectangle.angled")
             } description: {
@@ -36,6 +44,9 @@ struct ViewerView: View {
             }
         } else if let photo = model.currentPhoto {
             PhotoView(photo: photo, images: model.images)
+                .contextMenu {
+                    Button(model.revealTitle) { model.revealCurrentPhoto() }
+                }
         } else {
             ContentUnavailableView {
                 Label("That's All for \(String(model.displayedYear))", systemImage: "checkmark.circle")
@@ -157,6 +168,7 @@ struct YearPicker: View {
         }
         .fixedSize()
         .help("Choose a year")
+        .accessibilityLabel("Year: \(String(model.displayedYear))")
     }
 }
 
@@ -209,6 +221,9 @@ struct PhotoView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Photo from \(DisplayFormat.photoDate(photo.date))")
+        .accessibilityAddTraits(.isImage)
         .task(id: photo.id) {
             image = nil
             failed = false
