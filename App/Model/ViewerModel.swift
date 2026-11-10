@@ -141,7 +141,38 @@ final class ViewerModel {
     private(set) var navigator = YearNavigator(photoCounts: [], showEmptyYears: true)
     /// Photos in the current window, in date order.
     private(set) var photos: [PhotoItem] = []
-    private(set) var stepper = PhotoStepper(count: 0)
+    private(set) var stepper = PhotoStepper(count: 0) {
+        didSet { resetZoomIfPhotoChanged() }
+    }
+
+    // MARK: Zoom
+
+    /// Magnification of the photo on screen. Back to fit whenever the
+    /// photo changes.
+    private(set) var zoom = ZoomState()
+    /// The photo's fitted size and the viewport, reported by the view.
+    @ObservationIgnored private var zoomLayout = ZoomState.Layout(fitted: .zero, viewport: .zero)
+    @ObservationIgnored private var zoomedPhotoID: String?
+
+    func zoomIn() { zoom.zoomIn(layout: zoomLayout) }
+    func zoomOut() { zoom.zoomOut(layout: zoomLayout) }
+    func zoomToFit() { zoom.reset() }
+    func toggleZoom() { zoom.toggle(layout: zoomLayout) }
+    func setZoomScale(_ scale: Double) { zoom.setScale(scale, layout: zoomLayout) }
+    func setZoomOffset(_ offset: CGSize) { zoom.setOffset(offset, layout: zoomLayout) }
+
+    /// Called by the photo view when its size or the photo's size changes.
+    func updateZoomLayout(_ layout: ZoomState.Layout) {
+        zoomLayout = layout
+        zoom.setOffset(zoom.offset, layout: layout)
+    }
+
+    private func resetZoomIfPhotoChanged() {
+        let id = currentPhoto?.id
+        guard id != zoomedPhotoID else { return }
+        zoomedPhotoID = id
+        zoom.reset()
+    }
     /// The source being synced, and its progress.
     private(set) var syncingSourceID: Int64?
     private(set) var scanProgress: ScanProgress?
@@ -619,6 +650,7 @@ final class ViewerModel {
             let hadPhotos = !timeline.photos.isEmpty
             let currentID = currentPhoto?.id
             let wasAtEnd = stepper.isAtEnd
+            let savedZoom = zoom
             timeline = try await index.loadTimeline(roots: roots)
             let keep = keepPosition && hadPhotos
             rebuildNavigator(preferredYear: keep ? yearsAgo : nil)
@@ -627,6 +659,8 @@ final class ViewerModel {
                 stepper.moveToEnd()
             } else if let currentID, let position = photos.firstIndex(where: { $0.id == currentID }) {
                 stepper.jump(to: position)
+                // A background reload that keeps the same photo keeps its zoom.
+                zoom = savedZoom
             }
         } catch {
             logger.error("Reload failed: \(error.localizedDescription, privacy: .public)")

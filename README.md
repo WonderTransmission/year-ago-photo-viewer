@@ -72,9 +72,11 @@ App Groups need a development team, so:
 1. **Add a source.** Click **Add Folder…** on the welcome screen, or open
    **Sources…** (⇧⌘O) to add folders or the Photos library.
 2. **Step through photos.** Use ← and →, the arrow buttons, or the filmstrip.
-3. **Change year.** Use **Next Year** / **Previous Year**, ⌘] / ⌘[, or the
+3. **Zoom.** Pinch, double-click, or use ⌘= / ⌘- / ⌘0. Drag to look around.
+   Moving to another photo returns to fit.
+4. **Change year.** Use **Next Year** / **Previous Year**, ⌘] / ⌘[, or the
    year menu.
-4. **Adjust.** Pick the window length (1–6 weeks) in the toolbar. In
+5. **Adjust.** Pick the window length (1–6 weeks) in the toolbar. In
    **Settings** (⌘,) choose whether to show years with no photos.
 
 Each source has its own date setting in the Sources panel. The toolbar's

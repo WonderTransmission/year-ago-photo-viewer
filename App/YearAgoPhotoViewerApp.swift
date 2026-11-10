@@ -66,6 +66,16 @@ private struct ViewerCommands: Commands {
                 }
             }
             Divider()
+            Button("Zoom In") { model.zoomIn() }
+                .keyboardShortcut("=")
+                .disabled(model.currentPhoto == nil)
+            Button("Zoom Out") { model.zoomOut() }
+                .keyboardShortcut("-")
+                .disabled(!model.zoom.isZoomed)
+            Button("Zoom to Fit") { model.zoomToFit() }
+                .keyboardShortcut("0")
+                .disabled(!model.zoom.isZoomed)
+            Divider()
         }
 
         CommandMenu("Go") {

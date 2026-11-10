@@ -18,6 +18,11 @@ Tip: copy the boxes into a release issue and tick them there.
   The first index shows a progress bar, then the viewer.
 - [ ] **Step.** ← and → step through the year's photos. The last step shows the
   end card. ⌘] and ⌘[ change the year.
+- [ ] **Zoom.** Pinch to zoom; double-click toggles fit and 250%; ⌘= / ⌘- /
+  ⌘0 zoom in, out, and to fit. A "250% Fit" badge shows while zoomed. Drag
+  pans, stopping at the photo's edges. → or ← returns to fit.
+- [ ] **Buttons on bright photos.** On a white or very bright photo that
+  reaches the window's edges, both arrow buttons stay clearly visible.
 - [ ] **Relaunch.** Quit and relaunch. Photos appear at once, with no
   full-window progress.
 - [ ] **Live change.** Copy a photo dated last year into the folder. It appears

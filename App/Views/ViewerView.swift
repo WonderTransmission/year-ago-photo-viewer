@@ -45,7 +45,17 @@ struct ViewerView: View {
         } else if let photo = model.currentPhoto {
             PhotoView(photo: photo, images: model.images)
                 .contextMenu {
+                    Button("Zoom In") { model.zoomIn() }
+                    Button("Zoom Out") { model.zoomOut() }.disabled(!model.zoom.isZoomed)
+                    Button("Zoom to Fit") { model.zoomToFit() }.disabled(!model.zoom.isZoomed)
+                    Divider()
                     Button(model.revealTitle) { model.revealCurrentPhoto() }
+                }
+                .overlay(alignment: .top) {
+                    if model.zoom.isZoomed {
+                        ZoomBadge()
+                            .padding(.top, 12)
+                    }
                 }
         } else {
             ContentUnavailableView {
@@ -69,9 +79,7 @@ struct ViewerView: View {
                 .disabled(!model.stepper.canGoForward)
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .buttonBorderShape(.circle)
+        .buttonStyle(.overlay)
         .padding()
     }
 
@@ -198,28 +206,48 @@ private struct TitleAndIconTrailingLabelStyle: LabelStyle {
     }
 }
 
-/// Decodes and shows one photo, scaled to fit.
+/// Decodes and shows one photo, scaled to fit, with zoom and pan:
+/// pinch or ⌘= / ⌘- to zoom, double-click to toggle, drag to pan.
 struct PhotoView: View {
+    @Environment(ViewerModel.self) private var model
     let photo: PhotoItem
     let images: ImageRepository
 
     @State private var image: CGImage?
     @State private var failed = false
+    /// Scale and offset when the current pinch or drag began.
+    @State private var pinchStart: Double?
+    @State private var dragStart: CGSize?
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .scaledToFit()
-            } else if failed {
-                ContentUnavailableView("Can't Preview “\(photo.fileName)”",
-                                       systemImage: "exclamationmark.triangle")
-            } else {
-                ProgressView()
+        GeometryReader { geometry in
+            ZStack {
+                if let image {
+                    let layout = ZoomState.Layout(imageSize: CGSize(width: image.width, height: image.height),
+                                                  viewport: geometry.size)
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .frame(width: layout.fitted.width, height: layout.fitted.height)
+                        .scaleEffect(model.zoom.scale)
+                        .offset(model.zoom.offset)
+                        .onChange(of: layout, initial: true) { _, layout in
+                            model.updateZoomLayout(layout)
+                        }
+                } else if failed {
+                    ContentUnavailableView("Can't Preview “\(photo.fileName)”",
+                                           systemImage: "exclamationmark.triangle")
+                } else {
+                    ProgressView()
+                }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .contentShape(.rect)
+            .clipped()
+            .gesture(magnify)
+            .simultaneousGesture(pan)
+            .onTapGesture(count: 2) { model.toggleZoom() }
+            .pointerStyle(model.zoom.isZoomed ? (dragStart == nil ? .grabIdle : .grabActive) : nil)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Photo from \(DisplayFormat.photoDate(photo.date))")
@@ -233,4 +261,90 @@ struct PhotoView: View {
             failed = decoded == nil
         }
     }
+}
+
+private extension PhotoView {
+    /// Trackpad pinch, relative to the scale when the pinch began.
+    var magnify: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = pinchStart ?? model.zoom.scale
+                pinchStart = start
+                model.setZoomScale(start * value.magnification)
+            }
+            .onEnded { _ in pinchStart = nil }
+    }
+
+    /// Drag to pan, only while zoomed.
+    var pan: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                guard model.zoom.isZoomed else { return }
+                let start = dragStart ?? model.zoom.offset
+                dragStart = start
+                model.setZoomOffset(CGSize(width: start.width + value.translation.width,
+                                           height: start.height + value.translation.height))
+            }
+            .onEnded { _ in dragStart = nil }
+    }
+}
+
+/// "250%  [Fit]" over a zoomed photo.
+private struct ZoomBadge: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("\(model.zoom.percent)%")
+                .monospacedDigit()
+            Button("Fit") { model.zoomToFit() }
+                .buttonStyle(.plain)
+                .fontWeight(.semibold)
+                .help("Zoom to fit (⌘0)")
+        }
+        .font(.callout)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.55), in: .capsule)
+        .overlay(Capsule().strokeBorder(.white.opacity(0.6), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
+    }
+}
+
+/// A round button that stays visible over any photo, light or dark: a
+/// dark translucent disc with a light outline and a soft shadow.
+struct OverlayButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        OverlayButton(configuration: configuration)
+    }
+
+    private struct OverlayButton: View {
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+        let configuration: ButtonStyleConfiguration
+
+        var body: some View {
+            // Disabled buttons keep their disc, so they still read as buttons
+            // on a white photo; only the arrow dims.
+            configuration.label
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white.opacity(isEnabled ? 1 : 0.35))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.black.opacity(discOpacity)))
+                .overlay(Circle().strokeBorder(.white.opacity(isEnabled ? 0.7 : 0.35), lineWidth: 1))
+                .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
+                .contentShape(Circle())
+                .onHover { isHovered = $0 }
+        }
+
+        private var discOpacity: Double {
+            guard isEnabled else { return 0.4 }
+            return configuration.isPressed ? 0.75 : isHovered ? 0.65 : 0.5
+        }
+    }
+}
+
+extension ButtonStyle where Self == OverlayButtonStyle {
+    static var overlay: OverlayButtonStyle { OverlayButtonStyle() }
 }
