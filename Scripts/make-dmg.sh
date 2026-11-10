@@ -50,5 +50,6 @@ hdiutil create -volname "$app_name $version" -srcfolder "$staging" \
     -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$dmg" >/dev/null
 rm -rf "$staging"
 
-shasum -a 256 "$dmg" | tee "$dmg.sha256"
+# Record just the file name, so `shasum -c` works next to the download.
+(cd "$build" && shasum -a 256 "$(basename "$dmg")") | tee "$dmg.sha256"
 echo "Done: $dmg"
