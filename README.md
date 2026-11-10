@@ -27,9 +27,18 @@ years. Open it to step through last year's photos from the past week. Press
 
 ![The Sources panel with two folders](docs/images/sources.png)
 
+## Installing
+
+**Download:** get the `.dmg` from the
+[latest release](https://github.com/WonderTransmission/year-ago-photo-viewer/releases/latest)
+and drag the app to Applications. The download isn't notarized, so macOS asks
+you to approve it once. [INSTALL.md](INSTALL.md) walks you through it.
+
+**Build it yourself:** see [Building](#building) below.
+
 ## Requirements
 
-- macOS 26 or later
+- macOS 26 or later, on Apple silicon or Intel
 - Xcode 27 or later, to build
 
 ## Building
@@ -99,6 +108,16 @@ YAPV_SCALE_TEST=1 swift test --package-path Packages/YearAgoCore -c release --fi
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) covers what unit
 tests can't: the Photos library, permissions, drives, and the widget.
 
+## Making a release
+
+`Scripts/make-dmg.sh` builds an unsigned Release DMG in `build/` and prints
+its SHA-256. Attach both to the GitHub release:
+
+```sh
+Scripts/make-dmg.sh
+gh release upload v1.2 build/YearAgoPhotoViewer-1.2.0.dmg
+```
+
 Before committing, check that no personal data slipped in:
 
 ```sh
@@ -123,7 +142,7 @@ Scripts/check-privacy.sh
 | `Config/` | Shared build settings and the signing template |
 | `Widget/` | The WidgetKit extension |
 | `Packages/YearAgoCore/Sources/YearAgoSnapshot/` | Snapshot format shared by the app and widget |
-| `Scripts/` | Icon generator and privacy check |
+| `Scripts/` | Icon generator, release DMG builder, and privacy check |
 | `docs/` | Proposal, implementation plan, checklist, screenshots |
 
 The screenshots use generated sample images, not real photos.

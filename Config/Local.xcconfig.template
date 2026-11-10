@@ -1,8 +1,9 @@
 // Copy this file to Local.xcconfig and fill in your values.
 // Git ignores Local.xcconfig, so personal values never reach the repo.
 
-// Reverse-DNS prefix for bundle IDs, e.g. com.yourname
-BUNDLE_ID_PREFIX = com.example
+// Reverse-DNS prefix for bundle IDs. The project default is
+// com.wondertransmission; change it if you sign with your own team.
+// BUNDLE_ID_PREFIX = com.yourname
 
 // Your Apple development team ID. Leave empty to sign ad hoc.
 // A team is required once the widget (App Group) is added.
@@ -15,4 +16,4 @@ CODE_SIGN_IDENTITY = -
 // DEVELOPMENT_TEAM is set: without a team, the build leaves the App Group
 // out and the widget shows a setup message. A Team-ID-prefixed group
 // (e.g. ABCDE12345.yearago) avoids a macOS access prompt.
-APP_GROUP_ID = group.com.example.yearago
+// APP_GROUP_ID = ABCDE12345.yearago

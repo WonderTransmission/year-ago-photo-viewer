@@ -4,10 +4,10 @@
 // Local.xcconfig, which git ignores. Copy Local.xcconfig.template to start.
 
 // Defaults, overridden by Local.xcconfig when present.
-BUNDLE_ID_PREFIX = com.example
+BUNDLE_ID_PREFIX = com.wondertransmission
 DEVELOPMENT_TEAM =
 CODE_SIGN_IDENTITY = -
-APP_GROUP_ID = group.com.example.yearago
+APP_GROUP_ID = group.com.wondertransmission.yearago
 
 #include? "Local.xcconfig"
 
