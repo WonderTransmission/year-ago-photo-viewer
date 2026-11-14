@@ -90,6 +90,45 @@ private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
         #expect(result.read == 500)   // every asset read again: nothing was left behind
     }
 
+    @Test func burstShotsInTheLibraryAllShow() async throws {
+        // Same capture second, same pixel size: a burst, not duplicates.
+        let library = FakeLibrary((1...5).map { asset("burst-\($0)", local(2025, 11, 3, 9, 30)) })
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        _ = try await index.syncLibrary(sourceID: source.id, library: library)
+        #expect(try await index.loadTimeline(roots: [:]).photos.count == 5)
+    }
+
+    @Test func anEmptyLibraryAfterIndexingIsUnavailableAndKeepsItsRows() async throws {
+        let library = FakeLibrary([asset("a", local(2025, 11, 3)), asset("b", local(2025, 11, 4))])
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        _ = try await index.syncLibrary(sourceID: source.id, library: library)
+
+        library.setAssets([])   // e.g. the library's drive was disconnected
+        await #expect(throws: PhotoIndexError.self) {
+            _ = try await index.syncLibrary(sourceID: source.id, library: library)
+        }
+        #expect(try await index.fileCount(sourceID: source.id) == 2)
+    }
+
+    @Test func anEmptyLibraryOnFirstSyncIsFine() async throws {
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        let result = try await index.syncLibrary(sourceID: source.id, library: FakeLibrary([]))
+        #expect(result == SyncResult(scanned: 0, read: 0, removed: 0))
+    }
+
+    @Test func progressStartsWithOpeningTheLibrary() async throws {
+        let library = FakeLibrary([asset("a", local(2025, 11, 3))])
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        let stages = StageLog()
+        _ = try await index.syncLibrary(sourceID: source.id, library: library) { stages.append($0.stage) }
+        #expect(stages.values.first == .opening)
+        #expect(stages.values.contains(.reading))
+    }
+
     @Test func resyncAppliesEditsAndDeletions() async throws {
         let library = FakeLibrary([
             asset("keep", local(2025, 11, 3)),
@@ -171,4 +210,16 @@ private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
         try await index.setEnabled(false, forSource: photosSource.id)
         #expect(try await index.loadTimeline(roots: roots).photos.map(\.fileName) == ["IMG_0001.jpg", "other.jpg"])
     }
+}
+
+/// Thread-safe collector for progress stages.
+private final class StageLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [ScanProgress.Stage] = []
+
+    func append(_ stage: ScanProgress.Stage) {
+        lock.withLock { stored.append(stage) }
+    }
+
+    var values: [ScanProgress.Stage] { lock.withLock { stored } }
 }

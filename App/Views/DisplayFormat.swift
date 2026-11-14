@@ -28,6 +28,8 @@ enum DisplayFormat {
     /// "Finding photos… 3,500 found" or "Reading photo details… 1,234 of 9,876".
     static func progress(_ progress: ScanProgress) -> String {
         switch progress.stage {
+        case .opening:
+            "Opening your Photos library…"
         case .finding:
             "Finding photos… \(progress.completed.formatted()) found"
         case .reading:
@@ -40,6 +42,7 @@ enum DisplayFormat {
     /// "3,500 found" or "1,234 of 9,876", for tight spaces.
     static func shortProgress(_ progress: ScanProgress) -> String {
         switch progress.stage {
+        case .opening: "Opening…"
         case .finding: "\(progress.completed.formatted()) found"
         case .reading, .hashing: "\(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
         }
@@ -50,6 +53,11 @@ enum DisplayFormat {
         var style = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
         style.timeZone = .gmt
         return date.dateForDisplayInUTC.formatted(style)
+    }
+
+    /// "45 s", "4 min 10 s", "1 h 3 min": a waiting time.
+    static func elapsed(_ seconds: TimeInterval) -> String {
+        Duration.seconds(max(0, seconds.rounded())).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow, maximumUnitCount: 2))
     }
 
     /// "12 of 37", "37 photos", or "No photos".

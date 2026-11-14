@@ -253,7 +253,14 @@ Confirmed from the logs; see section 2.0. Kept for future reports:
 - **Persistent logs.** Switch stage logging to "notice" so the next run leaves
   a trace.
 
-### 4.2 Responsiveness
+### 4.2 Responsiveness (done)
+
+Result: with `-DebugFakeLibrary 60` (a fake library whose every call blocks
+its thread for 60 s, like the real library after the macOS upgrade), the
+watchdog logged no main-thread stalls while the window was used during the
+wait. The watchdog itself was checked with `-DebugBlockMainThread 2`, which
+it reported as a 2.00 s stall. Folder sources now sync before the Photos
+library, so their photos appear while it opens.
 
 - Move all PhotoKit calls off the main thread (3.1).
 - Add the debug main-thread watchdog.

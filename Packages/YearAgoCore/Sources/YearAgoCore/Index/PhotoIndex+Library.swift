@@ -27,6 +27,10 @@ extension PhotoIndex {
     /// assets no longer in the library are deleted. `creationDate` fills
     /// both the Created and EXIF dates (Photos treats it as the capture
     /// date). File names are fetched only if the source uses File name dates.
+    ///
+    /// - Throws: `PhotoIndexError.rootUnavailable` if the library returns no
+    ///   assets while the index has some (e.g. its drive is disconnected);
+    ///   nothing is deleted.
     public func syncLibrary(
         sourceID: Int64,
         library: any PhotoLibraryProviding,
@@ -36,12 +40,18 @@ extension PhotoIndex {
         isSyncing = true
         defer { isSyncing = false }
 
-        onProgress(ScanProgress(stage: .finding, completed: 0))
+        // The first PhotoKit call waits for macOS to open the library.
+        onProgress(ScanProgress(stage: .opening, completed: 0))
         let assets = try await library.imageAssets()
         try Task.checkCancellation()
         onProgress(ScanProgress(stage: .finding, completed: assets.count))
 
         let existing = try existingFiles(sourceID: sourceID)
+        // A library on a disconnected drive can look empty. Never treat that
+        // as "every photo was deleted".
+        if assets.isEmpty && !existing.isEmpty {
+            throw PhotoIndexError.rootUnavailable
+        }
         var present = Set<String>()
         present.reserveCapacity(assets.count)
         var changed: [FileRecord] = []

@@ -60,6 +60,15 @@ Tip: copy the boxes into a release issue and tick them there.
   turn access off and relaunch. The source shows "No Access…", which opens
   System Settings. No library photos appear; folder photos still do.
 - [ ] **Add twice.** Add Photos Library is disabled once the library is a source.
+- [ ] **Slow first open.** After a macOS upgrade (or with a library on an
+  external hard drive), add the library. The window keeps responding. A
+  banner shows "Opening your Photos library…" with the time so far; after
+  30 s it explains why and offers **Show Progress in Photos**. Folder photos
+  stay usable meanwhile.
+- [ ] **Library drive disconnected.** With the library on an external drive,
+  eject the drive and relaunch. The source shows "Unavailable", not
+  "No Access…", and its index is kept. Reconnect: it comes back.
+- [ ] **Bursts.** Burst photos in the library all appear, not just one.
 
 ## Menu bar item (M9)
 

@@ -7,7 +7,11 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var model = model
-        Group {
+        VStack(spacing: 0) {
+            if let since = model.libraryOpeningSince {
+                LibraryOpeningBanner(since: since)
+                Divider()
+            }
             switch model.phase {
             case .loading:
                 Color.clear
@@ -19,6 +23,7 @@ struct ContentView: View {
                     progress: model.scanProgress)
             case .ready:
                 ViewerView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 720, minHeight: 480)
@@ -130,5 +135,48 @@ private struct WelcomeView: View {
             Button("Add Folder…", action: addFolder)
                 .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+/// Shown while waiting for macOS to open the Photos library. That can take
+/// many minutes the first time, e.g. after a macOS upgrade or on a slow
+/// external drive. The rest of the app keeps working meanwhile.
+private struct LibraryOpeningBanner: View {
+    let since: Date
+    /// Seconds before explaining why it can take long.
+    static let explainAfter: TimeInterval = 30
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            let waited = context.date.timeIntervalSince(since)
+            HStack(alignment: .top, spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("Opening your Photos library…").fontWeight(.semibold)
+                        Text(DisplayFormat.elapsed(waited))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    if waited >= Self.explainAfter {
+                        Text("macOS is preparing your Photos library. After a macOS update, or on an external drive, this can take a while the first time. You can keep using the app.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 12)
+                if waited >= Self.explainAfter {
+                    Button("Show Progress in Photos") { PhotoKitLibrary.openPhotosApp() }
+                        .help("The Photos app shows its own progress while macOS prepares the library.")
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(.yellow.opacity(0.12))
+        }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -178,6 +178,11 @@ final class ViewerModel {
     private(set) var scanProgress: ScanProgress?
     /// A problem to show the user, e.g. a folder that could not be added.
     var errorMessage: String?
+    /// When the current wait for the Photos library to open began; nil when
+    /// not waiting. Drives the "Opening your Photos library…" banner.
+    private(set) var libraryOpeningSince: Date?
+    /// Whether the app may read the Photos library. Checked off the main thread.
+    private(set) var photosAccessGranted = false
     /// Drives the folder picker (toolbar, menu, welcome screen).
     var isAddingFolder = false
     /// Drives the Sources panel.
@@ -205,9 +210,14 @@ final class ViewerModel {
     /// Increments per sync, so late progress updates from an old sync are ignored.
     private var syncGeneration = 0
     private var volumeObservers: [NSObjectProtocol] = []
-    private let photoLibrary = PhotoKitLibrary()
-    private var libraryObserver: LibraryChangeObserver?
+    /// The Photos library. Every call goes through methods that run off the
+    /// main thread (see AppPhotoLibrary).
+    private let photoLibrary: any AppPhotoLibrary
+    private var libraryObservation: LibraryObservation?
+    private var isStartingLibraryObservation = false
     private var librarySyncDelay: Task<Void, Never>?
+    /// Logs main-thread stalls over 250 ms.
+    @ObservationIgnored private let watchdog = MainThreadWatchdog()
     /// False until the index has been read once at launch.
     private var hasLoaded = false
 
@@ -220,7 +230,8 @@ final class ViewerModel {
         showMenuBarItem = settings.showMenuBarItem
         window = WindowCalculator().window(today: launchDay, yearsAgo: 1, weeks: SettingsStore().weeks)
         debugFolders = Self.debugFolderArguments()
-        index = Self.openIndex(debug: !debugFolders.isEmpty)
+        photoLibrary = Self.makePhotoLibrary()
+        index = Self.openIndex(debug: !debugFolders.isEmpty || Self.debugFakeLibraryDelay() != nil)
         observeVolumes()
         observeDayChange()
         snapshotter = WidgetSnapshotter(folder: Self.widgetFolder(), images: images)
@@ -377,7 +388,7 @@ final class ViewerModel {
     /// Asks for Photos access, then adds the library as a source.
     func addPhotosLibrary() {
         Task {
-            guard await PhotoKitLibrary.requestAccess() else {
+            guard await photoLibrary.requestAccess() else {
                 errorMessage = "\(CoreInfo.appName) doesn't have access to Photos. Turn it on in System Settings › Privacy & Security › Photos."
                 return
             }
@@ -420,6 +431,19 @@ final class ViewerModel {
 
     private func start() async {
         await migrateLegacyBookmark()
+        #if DEBUG
+        // -DebugBlockMainThread <seconds>: a deliberate stall, to check that
+        // the main-thread watchdog reports it.
+        let block = UserDefaults.standard.double(forKey: "DebugBlockMainThread")
+        if block > 0 {
+            try? await Task.sleep(for: .seconds(2))
+            Self.debugBlockCurrentThread(seconds: block)
+        }
+        #endif
+        if Self.debugFakeLibraryDelay() != nil {
+            // The fake library is always a source, so tests need no clicks.
+            _ = try? await index.addPhotosLibrarySource(name: "Fake Photos Library", dateSource: defaultDateSource)
+        }
         for debugFolder in debugFolders {
             _ = try? await index.addFolderSource(rootPath: FolderScanner.realPath(debugFolder.path),
                                                  name: debugFolder.lastPathComponent, bookmark: nil,
@@ -445,11 +469,12 @@ final class ViewerModel {
     /// The Photos library: checks access, and watches for changes.
     private func reconnect(_ source: SourceRecord) async {
         if source.kind == .photos {
-            let authorized = PhotoKitLibrary.isAuthorized
+            let authorized = await photoLibrary.accessGranted()
+            photosAccessGranted = authorized
             if authorized {
                 observeLibrary(source.id)
             } else {
-                libraryObserver = nil
+                stopObservingLibrary()
             }
             try? await index.setOnline(authorized, forSource: source.id)
             return
@@ -491,10 +516,25 @@ final class ViewerModel {
     /// Resyncs the library 5 seconds after it stops changing. Photos reports
     /// many small changes, e.g. during iCloud syncing.
     private func observeLibrary(_ id: Int64) {
-        guard libraryObserver == nil else { return }
-        libraryObserver = LibraryChangeObserver { [weak self] in
+        guard libraryObservation == nil, !isStartingLibraryObservation else { return }
+        isStartingLibraryObservation = true
+        let library = photoLibrary
+        let onChange: @Sendable () -> Void = { [weak self] in
             Task { @MainActor in self?.scheduleLibrarySync(id) }
         }
+        Task {
+            // Off the main thread: registering opens the library, which can
+            // take minutes the first time.
+            let observation = await library.startObservingChanges(onChange)
+            isStartingLibraryObservation = false
+            libraryObservation = observation
+        }
+    }
+
+    private func stopObservingLibrary() {
+        guard let observation = libraryObservation else { return }
+        libraryObservation = nil
+        Task { await observation.stop() }
     }
 
     private func scheduleLibrarySync(_ id: Int64) {
@@ -535,7 +575,7 @@ final class ViewerModel {
 
     private func refreshAvailability() async {
         let wasOnline = Set(sources.filter(\.isOnline).map(\.id))
-        for source in sources where source.kind == .folder {
+        for source in sources {
             await reconnect(source)
         }
         await refresh(keepPosition: true)
@@ -562,6 +602,10 @@ final class ViewerModel {
         for id in ids where !syncQueue.contains(id) {
             syncQueue.append(id)
         }
+        // Folders first: opening the Photos library can take minutes, and
+        // folder photos shouldn't wait behind it.
+        let isLibrary: (Int64) -> Bool = { [sources] id in sources.first { $0.id == id }?.kind == .photos }
+        syncQueue = syncQueue.filter { !isLibrary($0) } + syncQueue.filter(isLibrary)
         guard !isSyncing, !syncQueue.isEmpty else { return }
         isSyncing = true
         Task { await runSyncQueue() }
@@ -578,7 +622,8 @@ final class ViewerModel {
             guard let source = source(id: id), source.isEnabled else { continue }
             let root = roots[id]
             if source.kind == .folder, root == nil { continue }
-            if source.kind == .photos, !PhotoKitLibrary.isAuthorized {
+            if source.kind == .photos, !(await photoLibrary.accessGranted()) {
+                photosAccessGranted = false
                 try? await index.setOnline(false, forSource: id)
                 continue
             }
@@ -591,6 +636,11 @@ final class ViewerModel {
                 Task { @MainActor in
                     guard let self, self.syncGeneration == generation, self.syncingSourceID == id else { return }
                     self.scanProgress = progress
+                    if progress.stage == .opening {
+                        self.libraryOpeningSince = self.libraryOpeningSince ?? Date()
+                    } else {
+                        self.libraryOpeningSince = nil
+                    }
                 }
             }
             do {
@@ -599,19 +649,20 @@ final class ViewerModel {
                 } else {
                     try await index.syncLibrary(sourceID: id, library: photoLibrary, onProgress: onProgress)
                 }
-                logger.info("Sync of source \(id, privacy: .public) done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
+                logger.notice("Sync of source \(id, privacy: .public) done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
             } catch PhotoIndexError.rootUnavailable {
-                logger.info("Source \(id, privacy: .public) is offline")
+                logger.notice("Source \(id, privacy: .public) is offline")
                 disconnect(id)
                 try? await index.setOnline(false, forSource: id)
             } catch {
                 logger.error("Sync of source \(id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
             syncingSourceID = nil
+            libraryOpeningSince = nil
             await refresh(keepPosition: true)
         }
         await findDuplicates()
-        logger.info("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
+        logger.notice("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
     }
 
     /// Hashes same-size files across all reachable sources and hides
@@ -628,7 +679,7 @@ final class ViewerModel {
                 }
             }
             if hashed > 0 {
-                logger.info("Duplicate check hashed \(hashed, privacy: .public) files in \((ContinuousClock.now - start).description, privacy: .public)")
+                logger.notice("Duplicate check hashed \(hashed, privacy: .public) files in \((ContinuousClock.now - start).description, privacy: .public)")
             }
         } catch {
             logger.error("Duplicate check failed: \(error.localizedDescription, privacy: .public)")
@@ -724,6 +775,33 @@ final class ViewerModel {
         }
         #endif
         return LocalDateTime(Date(), in: .current)
+    }
+
+    /// PhotoKit, or in debug builds a slow fake (-DebugFakeLibrary <seconds>).
+    private static func makePhotoLibrary() -> any AppPhotoLibrary {
+        #if DEBUG
+        if let delay = debugFakeLibraryDelay() {
+            return SlowFakePhotoLibrary(openDelay: delay)
+        }
+        #endif
+        return PhotoKitLibrary()
+    }
+
+    #if DEBUG
+    /// Blocks the calling thread; synchronous so it really blocks.
+    private static func debugBlockCurrentThread(seconds: TimeInterval) {
+        Thread.sleep(forTimeInterval: seconds)
+    }
+    #endif
+
+    /// Seconds the fake library takes to "open", from -DebugFakeLibrary.
+    private static func debugFakeLibraryDelay() -> TimeInterval? {
+        #if DEBUG
+        if let text = UserDefaults.standard.string(forKey: "DebugFakeLibrary"), let seconds = Double(text) {
+            return seconds
+        }
+        #endif
+        return nil
     }
 
     private static func debugFolderArguments() -> [URL] {

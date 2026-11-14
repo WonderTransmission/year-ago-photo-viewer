@@ -120,10 +120,14 @@ private struct SourceRow: View {
 
     @ViewBuilder
     private var status: some View {
-        if !source.isOnline, source.kind == .photos {
+        if !source.isOnline, source.kind == .photos, !model.photosAccessGranted {
             Button("No Access…") { PhotoKitLibrary.openPrivacySettings() }
                 .buttonStyle(.link)
                 .help("Turn on Photos access in System Settings › Privacy & Security › Photos, then relaunch.")
+        } else if !source.isOnline, source.kind == .photos {
+            Label("Unavailable", systemImage: "externaldrive.badge.xmark")
+                .foregroundStyle(.secondary)
+                .help("The Photos library can't be reached, for example because its drive is disconnected. Its index is kept until it returns.")
         } else if !source.isOnline {
             Label("Offline", systemImage: "externaldrive.badge.xmark")
                 .foregroundStyle(.secondary)

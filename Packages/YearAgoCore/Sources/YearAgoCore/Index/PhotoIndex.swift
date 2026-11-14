@@ -3,6 +3,9 @@ import Foundation
 /// Progress of a folder sync, for the UI.
 public struct ScanProgress: Equatable, Sendable {
     public enum Stage: Equatable, Sendable {
+        /// Waiting for the Photos library to open. macOS can take minutes
+        /// the first time, e.g. after a macOS upgrade or on a slow drive.
+        case opening
         /// Walking the folder. `total` is nil.
         case finding
         /// Reading metadata from new and changed files.

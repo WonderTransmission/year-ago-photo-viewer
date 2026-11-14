@@ -16,6 +16,9 @@ struct ViewerView: View {
                     photoArrows
                 }
             }
+            // Fill the space even when showing an empty-year panel, so the
+            // year bar stays at the top.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if !model.stepper.isEmpty {
                 Divider()
                 caption
