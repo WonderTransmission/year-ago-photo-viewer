@@ -72,6 +72,24 @@ private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
         #expect(try await index.sources().count == 1)
     }
 
+    @Test func removingTheLibraryDeletesItsRowsAndReAddingReadsEverythingAgain() async throws {
+        let library = FakeLibrary((0..<500).map { asset("a\($0)", local(2025, 11, 3)) })
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let first = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        _ = try await index.syncLibrary(sourceID: first.id, library: library)
+        #expect(try await index.fileCount(sourceID: first.id) == 500)
+
+        try await index.removeSource(first.id)
+        #expect(try await index.fileCount(sourceID: first.id) == 0)
+        #expect(try await index.sources().isEmpty)
+        #expect(try await index.loadTimeline(roots: [:]).photos.isEmpty)
+
+        // Note: SQLite may reuse the removed source's ID (see indexing-ux-plan 2.2).
+        let second = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        let result = try await index.syncLibrary(sourceID: second.id, library: library)
+        #expect(result.read == 500)   // every asset read again: nothing was left behind
+    }
+
     @Test func resyncAppliesEditsAndDeletions() async throws {
         let library = FakeLibrary([
             asset("keep", local(2025, 11, 3)),
