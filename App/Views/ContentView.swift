@@ -105,9 +105,14 @@ private struct ScanProgressView: View {
         VStack(spacing: 12) {
             Text("Indexing “\(sourceName)”")
                 .font(.headline)
-            if let progress, progress.stage == .reading, let total = progress.total, total > 0 {
-                ProgressView(value: Double(progress.completed), total: Double(total))
+            // The whole sync's percentage; a spinner only until something
+            // is measurable (e.g. while the Photos library opens).
+            if let progress, progress.fraction > 0 || !progress.isIndeterminate {
+                ProgressView(value: progress.fraction)
                     .frame(width: 320)
+                Text("\(progress.percent)%")
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
             } else {
                 ProgressView()
             }

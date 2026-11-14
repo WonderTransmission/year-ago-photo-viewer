@@ -21,8 +21,8 @@ private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
 
     var fileNameRequests: Int { lock.withLock { nameRequests } }
 
-    func imageAssets() async throws -> [LibraryAsset] {
-        lock.withLock { assets }
+    func openImageAssets() async throws -> any LibraryAssetList {
+        ArrayAssetList(lock.withLock { assets })
     }
 
     func originalFileNames(for localIdentifiers: [String]) async -> [String: String] {
@@ -222,4 +222,74 @@ private final class StageLog: @unchecked Sendable {
     }
 
     var values: [ScanProgress.Stage] { lock.withLock { stored } }
+}
+
+/// A library whose list runs a hook before each batch, so a test can look
+/// at the index mid-sync.
+private struct HookedLibrary: PhotoLibraryProviding {
+    let all: [LibraryAsset]
+    let beforeBatch: @Sendable (Range<Int>) async -> Void
+
+    func openImageAssets() async throws -> any LibraryAssetList {
+        HookedList(all: all, beforeBatch: beforeBatch)
+    }
+
+    func originalFileNames(for localIdentifiers: [String]) async -> [String: String] { [:] }
+
+    struct HookedList: LibraryAssetList {
+        let all: [LibraryAsset]
+        let beforeBatch: @Sendable (Range<Int>) async -> Void
+        var count: Int { all.count }
+        func assets(in range: Range<Int>) async throws -> [LibraryAsset] {
+            await beforeBatch(range)
+            return Array(all[range])
+        }
+    }
+}
+
+/// Thread-safe collector for any values.
+private final class Collected<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Value] = []
+    func append(_ value: Value) { lock.withLock { stored.append(value) } }
+    var values: [Value] { lock.withLock { stored } }
+}
+
+@Suite struct LibraryProgressTests {
+    @Test func largeLibraryProgressRisesSteadilyAndRowsArriveEarly() async throws {
+        let total = 200_000
+        let base = Date(timeIntervalSince1970: 1_750_000_000)
+        let assets = (0..<total).map { i in
+            LibraryAsset(localIdentifier: "a\(i)", creationDate: base.addingTimeInterval(Double(i) * 60),
+                         modificationDate: base, pixelWidth: 4032, pixelHeight: 3024)
+        }
+        let index = try PhotoIndex(fileURL: nil, timeZone: TimeZone(identifier: "UTC")!)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+
+        let rowCounts = Collected<Int>()
+        let library = HookedLibrary(all: assets) { range in
+            // Halfway through, the first half must already be in the index.
+            if range.lowerBound == total / 2 {
+                rowCounts.append((try? await index.fileCount(sourceID: source.id)) ?? -1)
+            }
+        }
+        let events = Collected<ScanProgress>()
+        let result = try await index.syncLibrary(sourceID: source.id, library: library) { events.append($0) }
+
+        #expect(result.read == total)
+        #expect(rowCounts.values == [total / 2])
+
+        let progress = events.values
+        #expect(progress.first?.stage == .opening)
+        #expect(progress.last?.fraction == 1)
+        #expect(zip(progress, progress.dropFirst()).allSatisfy { $0.fraction <= $1.fraction })
+        let reading = progress.filter { $0.stage == .reading }
+        #expect(reading.first?.total == total)          // the total is known from the start
+        #expect(reading.count > 2)                        // it rises in steps…
+        #expect(reading.count < total / ProgressTestsLimits.batch)   // …but is throttled
+    }
+}
+
+private enum ProgressTestsLimits {
+    static let batch = 500
 }

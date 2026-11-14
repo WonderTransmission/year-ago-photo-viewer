@@ -34,6 +34,10 @@ enum DisplayFormat {
             "Finding photos… \(progress.completed.formatted()) found"
         case .reading:
             "Reading photo details… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        case .naming:
+            "Reading file names… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        case .organizing:
+            "Organizing…"
         case .hashing:
             "Checking for duplicates… \(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
         }
@@ -44,7 +48,8 @@ enum DisplayFormat {
         switch progress.stage {
         case .opening: "Opening…"
         case .finding: "\(progress.completed.formatted()) found"
-        case .reading, .hashing: "\(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        case .reading, .naming, .hashing: "\(progress.completed.formatted()) of \((progress.total ?? 0).formatted())"
+        case .organizing: "Organizing…"
         }
     }
 

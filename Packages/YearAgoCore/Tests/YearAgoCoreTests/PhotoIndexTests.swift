@@ -183,7 +183,30 @@ import Testing
         _ = try await index.sync(sourceID: source.id, root: root) { log.append($0) }
         let events = log.events
         #expect(events.first == ScanProgress(stage: .finding, completed: 0))
-        #expect(events.last == ScanProgress(stage: .reading, completed: 5, total: 5))
+        #expect(events.contains(ScanProgress(stage: .reading, completed: 5, total: 5, fraction: 0.95)))
+        #expect(events.last?.stage == .organizing)
+        #expect(events.last?.fraction == 1)
+        // The bar never moves backwards.
+        #expect(zip(events, events.dropFirst()).allSatisfy { $0.fraction <= $1.fraction })
+    }
+
+    @Test func rescanUsesThePreviousCountAsTheWalkingEstimate() async throws {
+        let root = try Fixtures.makeTemporaryDirectory()
+        defer { Fixtures.cleanUp(root) }
+        for i in 0..<4 {
+            try photo(root, "p\(i).jpg", exif: "2025:11:02 09:00:0\(i)")
+        }
+        let index = try makeIndex()
+        let source = try await index.addFolderSource(rootPath: root.path, name: "root", bookmark: nil, dateSource: .exif)
+        _ = try await index.sync(sourceID: source.id, root: root)
+
+        let log = ProgressLog()
+        _ = try await index.sync(sourceID: source.id, root: root) { log.append($0) }
+        let finding = log.events.filter { $0.stage == .finding }
+        #expect(finding.allSatisfy { $0.total == nil })   // the count is still an estimate
+        // Nothing changed: reading has nothing to do and the sync ends at 100%.
+        #expect(log.events.contains { $0.stage == .reading && $0.total == 0 })
+        #expect(log.events.last?.fraction == 1)
     }
 
     /// Opt-in: set YAPV_SCALE_TEST=1. Builds 100,000 tiny files and times a

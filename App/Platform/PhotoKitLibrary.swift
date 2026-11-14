@@ -1,6 +1,9 @@
 import AppKit
+import OSLog
 import Photos
 import YearAgoCore
+
+private let logger = Logger(subsystem: "YearAgoPhotoViewer", category: "photos")
 
 /// What the app needs from a Photos library: indexing (from the core
 /// protocol), access, and change notifications.
@@ -69,21 +72,45 @@ struct PhotoKitLibrary: AppPhotoLibrary {
     }
 
     @concurrent
-    func imageAssets() async throws -> [LibraryAsset] {
+    func openImageAssets() async throws -> any LibraryAssetList {
+        // Lazy: the count is known at once and assets load as they're read.
+        let result = PHAsset.fetchAssets(with: Self.imageFetchOptions())
+        Self.logLibraryComposition(imageCount: result.count)
+        return PhotoKitAssetList(result: result)
+    }
+
+    /// Images only, PhotoKit's defaults otherwise (hidden photos and
+    /// non-representative burst frames excluded).
+    static func imageFetchOptions() -> PHFetchOptions {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-        let result = PHAsset.fetchAssets(with: options)
-        var assets: [LibraryAsset] = []
-        assets.reserveCapacity(result.count)
-        result.enumerateObjects { asset, _, _ in
-            assets.append(LibraryAsset(
-                localIdentifier: asset.localIdentifier,
-                creationDate: asset.creationDate,
-                modificationDate: asset.modificationDate,
-                pixelWidth: asset.pixelWidth,
-                pixelHeight: asset.pixelHeight))
+        return options
+    }
+
+    /// Logs what the image fetch includes, as counts only, to explain any
+    /// difference from the count Photos shows (plan section 6). Counting is
+    /// quick once the library is open.
+    private static func logLibraryComposition(imageCount: Int) {
+        func count(_ configure: (PHFetchOptions) -> Void) -> Int {
+            let options = imageFetchOptions()
+            configure(options)
+            return PHAsset.fetchAssets(with: options).count
         }
-        return assets
+        func withSubtype(_ subtype: PHAssetMediaSubtype) -> Int {
+            count {
+                $0.predicate = NSPredicate(format: "mediaType == %d AND (mediaSubtypes & %d) != 0",
+                                           PHAssetMediaType.image.rawValue, subtype.rawValue)
+            }
+        }
+        let userLibrary = count { $0.includeAssetSourceTypes = .typeUserLibrary }
+        let shared = count { $0.includeAssetSourceTypes = .typeCloudShared }
+        let synced = count { $0.includeAssetSourceTypes = .typeiTunesSynced }
+        let hidden = count { $0.includeHiddenAssets = true } - imageCount
+        let extraBurstFrames = count { $0.includeAllBurstAssets = true } - imageCount
+        let screenshots = withSubtype(.photoScreenshot)
+        let live = withSubtype(.photoLive)
+        let videos = PHAsset.fetchAssets(with: .video, options: nil).count
+        logger.notice("Library images fetched: \(imageCount, privacy: .public) (user library \(userLibrary, privacy: .public), shared \(shared, privacy: .public), synced \(synced, privacy: .public)); screenshots \(screenshots, privacy: .public), Live Photos \(live, privacy: .public); not fetched: hidden \(hidden, privacy: .public), extra burst frames \(extraBurstFrames, privacy: .public); videos \(videos, privacy: .public)")
     }
 
     @concurrent
@@ -100,6 +127,25 @@ struct PhotoKitLibrary: AppPhotoLibrary {
             }
         }
         return names
+    }
+}
+
+/// The library's image assets, backed by a lazy PhotoKit fetch result.
+private struct PhotoKitAssetList: LibraryAssetList, @unchecked Sendable {
+    // PHFetchResult is immutable and safe to read from any thread.
+    let result: PHFetchResult<PHAsset>
+
+    var count: Int { result.count }
+
+    @concurrent
+    func assets(in range: Range<Int>) async throws -> [LibraryAsset] {
+        result.objects(at: IndexSet(integersIn: range)).map { asset in
+            LibraryAsset(localIdentifier: asset.localIdentifier,
+                         creationDate: asset.creationDate,
+                         modificationDate: asset.modificationDate,
+                         pixelWidth: asset.pixelWidth,
+                         pixelHeight: asset.pixelHeight)
+        }
     }
 }
 
@@ -193,9 +239,13 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
     private let assetCount: Int
     private var openedAt: Date?
 
-    init(openDelay: TimeInterval, assetCount: Int = 2_000) {
+    private let batchDelay: TimeInterval
+
+    /// - Parameter batchDelay: pause per 500-asset batch while reading.
+    init(openDelay: TimeInterval, assetCount: Int = 2_000, batchDelay: TimeInterval = 0) {
         self.openDelay = openDelay
         self.assetCount = assetCount
+        self.batchDelay = batchDelay
     }
 
     /// Blocks the calling thread until `openDelay` after the first call.
@@ -218,14 +268,28 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
     }
 
     @concurrent
-    func imageAssets() async throws -> [LibraryAsset] {
+    func openImageAssets() async throws -> any LibraryAssetList {
         waitForOpen()
         // Spread over the last three years, so every year window has some.
         let now = Date()
-        return (0..<assetCount).map { i in
+        let assets = (0..<assetCount).map { i in
             let date = now.addingTimeInterval(-Double(i) * 3 * 365 * 86_400 / Double(assetCount))
             return LibraryAsset(localIdentifier: "fake-\(i)", creationDate: date, modificationDate: date,
                                 pixelWidth: 4032, pixelHeight: 3024)
+        }
+        return SlowList(assets: assets, perBatchDelay: batchDelay)
+    }
+
+    /// Reads batches slowly, so progress is visible while testing.
+    private struct SlowList: LibraryAssetList {
+        let assets: [LibraryAsset]
+        let perBatchDelay: TimeInterval
+        var count: Int { assets.count }
+
+        @concurrent
+        func assets(in range: Range<Int>) async throws -> [LibraryAsset] {
+            if perBatchDelay > 0 { try await Task.sleep(for: .seconds(perBatchDelay)) }
+            return Array(assets[range])
         }
     }
 

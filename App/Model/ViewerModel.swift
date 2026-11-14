@@ -781,7 +781,9 @@ final class ViewerModel {
     private static func makePhotoLibrary() -> any AppPhotoLibrary {
         #if DEBUG
         if let delay = debugFakeLibraryDelay() {
-            return SlowFakePhotoLibrary(openDelay: delay)
+            // -DebugFakeLibraryBatchDelay <seconds> slows reading, to watch progress.
+            let batchDelay = UserDefaults.standard.double(forKey: "DebugFakeLibraryBatchDelay")
+            return SlowFakePhotoLibrary(openDelay: delay, assetCount: 10_000, batchDelay: batchDelay)
         }
         #endif
         return PhotoKitLibrary()

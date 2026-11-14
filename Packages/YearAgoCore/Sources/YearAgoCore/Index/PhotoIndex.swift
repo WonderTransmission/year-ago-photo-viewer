@@ -1,30 +1,5 @@
 import Foundation
 
-/// Progress of a folder sync, for the UI.
-public struct ScanProgress: Equatable, Sendable {
-    public enum Stage: Equatable, Sendable {
-        /// Waiting for the Photos library to open. macOS can take minutes
-        /// the first time, e.g. after a macOS upgrade or on a slow drive.
-        case opening
-        /// Walking the folder. `total` is nil.
-        case finding
-        /// Reading metadata from new and changed files.
-        case reading
-        /// Hashing same-size files to find duplicates.
-        case hashing
-    }
-
-    public var stage: Stage
-    public var completed: Int
-    public var total: Int?
-
-    public init(stage: Stage, completed: Int, total: Int? = nil) {
-        self.stage = stage
-        self.completed = completed
-        self.total = total
-    }
-}
-
 /// What a sync did.
 public struct SyncResult: Equatable, Sendable {
     /// Displayable files found in the folder.
@@ -100,11 +75,13 @@ public actor PhotoIndex {
         isSyncing = true
         defer { isSyncing = false }
 
-        onProgress(ScanProgress(stage: .finding, completed: 0))
-        let files = await Self.scanFolder(root, onProgress: onProgress)
+        let progress = ProgressReporter(plan: .folder, onProgress: onProgress)
+        let existing = try existingFiles(sourceID: sourceID)
+        // While walking, the last index's file count is the estimate.
+        progress.finding(0, estimate: existing.count)
+        let files = await Self.scanFolder(root, estimate: existing.count, progress: progress)
         try Task.checkCancellation()
 
-        let existing = try existingFiles(sourceID: sourceID)
         var present = Set<String>()
         present.reserveCapacity(files.count)
         var changed: [ScannedFile] = []
@@ -119,11 +96,13 @@ public actor PhotoIndex {
         let removed = existing.keys.filter { !present.contains($0) }
         try deleteFiles(sourceID: sourceID, locators: removed)
 
-        try await readAndStore(changed, sourceID: sourceID, onProgress: onProgress)
+        try await readAndStore(changed, sourceID: sourceID, progress: progress)
+        progress.report(.organizing)
         if !changed.isEmpty || !removed.isEmpty {
             try updatePairs(sourceID: sourceID)
         }
         try refreshDerived()
+        progress.report(.organizing, 1, of: 1)
         return SyncResult(scanned: files.count, read: changed.count, removed: removed.count)
     }
 
@@ -157,8 +136,9 @@ public actor PhotoIndex {
         }
 
         let total = candidates.count
+        let progress = ProgressReporter(plan: .duplicates, onProgress: onProgress)
         if total > 0 {
-            onProgress(ScanProgress(stage: .hashing, completed: 0, total: total))
+            progress.report(.hashing, 0, of: total)
             let chunks = stride(from: 0, to: total, by: Self.chunkSize).map {
                 Array(candidates[$0..<min($0 + Self.chunkSize, total)])
             }
@@ -179,7 +159,7 @@ public actor PhotoIndex {
                         }
                     }
                     completed += hashes.count
-                    onProgress(ScanProgress(stage: .hashing, completed: completed, total: total))
+                    progress.report(.hashing, completed, of: total)
                 }
             }
         }
@@ -189,17 +169,17 @@ public actor PhotoIndex {
 
     /// Walks the folder off the actor.
     @concurrent
-    private static func scanFolder(_ root: URL,
-                                   onProgress: @escaping @Sendable (ScanProgress) -> Void) async -> [ScannedFile] {
+    private static func scanFolder(_ root: URL, estimate: Int,
+                                   progress: ProgressReporter) async -> [ScannedFile] {
         FolderScanner.scan(root) { found in
-            onProgress(ScanProgress(stage: .finding, completed: found))
+            progress.finding(found, estimate: estimate)
         }
     }
 
     private func readAndStore(_ files: [ScannedFile], sourceID: Int64,
-                              onProgress: @escaping @Sendable (ScanProgress) -> Void) async throws {
+                              progress: ProgressReporter) async throws {
         let total = files.count
-        onProgress(ScanProgress(stage: .reading, completed: 0, total: total))
+        progress.report(.reading, 0, of: total)
         guard total > 0 else { return }
 
         let timeZone = timeZone
@@ -222,7 +202,7 @@ public actor PhotoIndex {
                     try upsert(pending, sourceID: sourceID)
                     pending.removeAll(keepingCapacity: true)
                 }
-                onProgress(ScanProgress(stage: .reading, completed: completed, total: total))
+                progress.report(.reading, completed, of: total)
             }
             try upsert(pending, sourceID: sourceID)
         }

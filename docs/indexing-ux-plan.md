@@ -270,7 +270,14 @@ library, so their photos appear while it opens.
   with a fake library that takes a minute to open (tests) and with the real
   library (manual).
 
-### 4.3 Measurable progress in the core
+### 4.3 Measurable progress in the core (done)
+
+Result: a 200,000-asset fake library syncs in about 2 s in tests, with the
+total known from the first event, progress never moving backwards, ending at
+100%, and half the rows already in the index halfway through. In the app,
+the first-index screen shows a real percentage (for example "45% · Reading
+photo details… 4,500 of 10,000"). The 100,000-file folder scale test is
+unchanged (full index 5.5 s, rescan 2.1 s).
 
 - Stage-based `ScanProgress` with totals, overall %, and time left; tested.
 - Chunked library reader with an up-front count; the
@@ -321,3 +328,12 @@ library, so their photos appear while it opens.
    (for example, hidden or shared-library items). Check what the asset fetch
    includes during step 4.3, and match Photos' count if it's a fetch-option
    difference.
+
+   Step 4.3 added a log line (kept on disk) when the library is read: images
+   fetched by source type (user library, shared, synced), screenshots and
+   Live Photos, and counts not fetched (hidden photos, extra burst frames),
+   plus videos. To read it after adding or relaunching with the library:
+
+   ```sh
+   log show --last 1h --predicate 'subsystem == "YearAgoPhotoViewer" AND category == "photos"'
+   ```
