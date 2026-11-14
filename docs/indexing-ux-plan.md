@@ -1,6 +1,6 @@
 # Plan: Responsive Indexing with Progress
 
-Status: Draft 2 — cause confirmed, decisions recorded
+Status: Steps 4.1–4.6 done; 4.7 (real-library verification) to do
 Trigger: adding a 29 GB Photos library on an external drive made the app
 unresponsive for 20+ minutes, with no sign of progress.
 
@@ -338,10 +338,120 @@ checklist.
 - **Done when:** editing one photo's date in Photos updates the index in
   under a second, without a full resync.
 
-### 4.7 Verify on the real library
+### 4.7 Verify on the real library (to do)
 
-- Run the manual checklist on the 29 GB external-drive library.
-- Record time to first photos, total index time, and memory use.
+Run this on the Mac with the 29 GB library on the USB enclosure (section
+2.0), using release 1.3 or later. Fill in the results table in 4.7.4, then
+paste it back here or into a GitHub issue. Everything below records counts
+and timings only, so the results contain no personal data.
+
+#### 4.7.1 Before you start
+
+1. **Install 1.3.** Download `YearAgoPhotoViewer-1.3.0.dmg` from the
+   [v1.3 release](https://github.com/WonderTransmission/year-ago-photo-viewer/releases/tag/v1.3)
+   and drag the app into Applications, replacing 1.2. Approve it once (see
+   `INSTALL.md`). Sources and the index carry over.
+2. **Note the setup.** macOS version (Apple menu › About This Mac), app
+   version (app menu › About), and the photo count Photos shows at the bottom
+   of its Library view.
+3. **Record the baseline.** Quit the app, then save the index counts:
+
+   ```sh
+   DB=$(ls ~/Library/Containers/*YearAgoPhotoViewer/Data/Library/Application\ Support/YearAgoPhotoViewer/Index.sqlite | head -1)
+   sqlite3 "$DB" "SELECT s.kind, s.is_stopped, s.known_total, COUNT(p.id) AS files, SUM(p.is_visible) AS shown FROM sources s LEFT JOIN photos p ON p.source_id = s.id GROUP BY s.id;"
+   ```
+
+   For comparison, 1.2 indexed 10,747 library items and showed 9,246
+   (section 5.2).
+4. **Keep a stopwatch handy.** Step B times the first photos by hand.
+
+#### 4.7.2 Procedure
+
+A. **Relaunch with the library.** Open the app. Note whether the "Opening
+   your Photos library…" banner appears and for how long. (It probably won't:
+   macOS already upgraded the library. The 20-minute wait would only return
+   after the next macOS upgrade.)
+
+B. **First index, timed.** Sources… › select Photos Library › Remove. Then
+   start the stopwatch and click **Add Photos Library**. Record:
+   - **First photos:** seconds until this week's photos from past years show.
+   - **Percent shown:** the toolbar's "Indexing N%" at that moment.
+   - **Index done:** seconds until the toolbar progress disappears.
+   - **Memory:** while it indexes, the app's peak in Activity Monitor ›
+     Memory, or run this a few times:
+
+     ```sh
+     ps -o rss= -p "$(pgrep -x 'Year Ago Photo Viewer')" | awk '{printf "%.0f MB\n", $1/1024}'
+     ```
+
+C. **Progress UI.** While B runs, check each shows a percentage that rises:
+   the toolbar ring and its popover (time left appears after about 20 s), the
+   Sources panel row, the Dock icon, and the menu bar item. Switch to another
+   app and back: the window must redraw at once.
+
+D. **Stop and Resume.** Remove and re-add the library once more. Partway
+   through, click the toolbar progress › **Stop**. Then quit, relaunch
+   (the library must stay "Stopped — N of M"), and click **Resume**.
+
+E. **Incremental changes.** In Photos, change the date of a photo from this
+   week last year (Image › Adjust Date and Time). It should move in the
+   viewer within about a second, with no toolbar progress. Then delete one
+   such photo and import one: each should show within a second.
+
+F. **Bursts.** Find a burst in Photos dated within the current week of a past
+   year (or widen the window to 6 weeks). All its kept frames should appear.
+
+G. **Collect the logs and counts.** Quit the app, then run:
+
+   ```sh
+   log show --last 3h --style compact --predicate 'subsystem == "YearAgoPhotoViewer"' \
+     | grep -E "Library images fetched|Sync of source|stopped after|Applied .* library changes|Main thread" \
+     > ~/Desktop/yapv-1.3-results.txt
+   sqlite3 "$DB" "SELECT s.kind, s.is_stopped, s.known_total, COUNT(p.id) AS files, SUM(p.is_visible) AS shown FROM sources s LEFT JOIN photos p ON p.source_id = s.id GROUP BY s.id;" >> ~/Desktop/yapv-1.3-results.txt
+   ```
+
+   The file holds counts and timings only. Lines starting "Main thread"
+   would mean the UI stalled; there should be none.
+
+H. **The rest of the checklist.** Work through the "Photos library (M7)"
+   section of `docs/manual-test-checklist.md` and note any item that fails.
+
+#### 4.7.3 What each result tells us
+
+- **First photos within seconds** confirms this-week-first (3.4) on a real
+  library, not just the fake.
+- **No "Main thread" lines** confirms the fix for the original hang (3.1).
+- **"Library images fetched"** explains the count mismatch (section 6): it
+  splits the fetch by source type and lists what isn't fetched (hidden photos,
+  extra burst frames). Compare its total with the count Photos shows.
+- **Shown rising from 9,246** (after B) measures the burst fix (3.7).
+- **"Sync of source … done in"** gives the real index time and how many
+  items were read.
+
+#### 4.7.4 Results
+
+| # | Measure | Expected | Result |
+|---|---|---|---|
+| 1 | macOS version / app version | 1.3.0 | |
+| 2 | Photos' own photo count | 9,755 (as before) | |
+| 3 | Baseline index: files / shown (1.2) | 10,747 / 9,246 | |
+| 4 | A: "Opening…" banner shown? How long? | Likely not shown | |
+| 5 | B: first photos visible (s) | Under 10 s | |
+| 6 | B: toolbar % at that moment | Low (under 20%) | |
+| 7 | B: index done (s) | About 1–2 min | |
+| 8 | B: peak memory (MB) | | |
+| 9 | C: all five progress displays rise; window redraws | Yes | |
+| 10 | D: stop within 1–2 s; stays stopped after relaunch; resume reads only the rest | Yes | |
+| 11 | E: date edit / delete / import each show within ~1 s, no full re-index | Yes | |
+| 12 | F: all burst frames appear | Yes | |
+| 13 | G: "Library images fetched" line (paste it) | | |
+| 14 | G: index after B: files / shown | Files ≈ 10,747; shown above 9,246 | |
+| 15 | G: any "Main thread" lines? | None | |
+| 16 | H: checklist items that failed | None | |
+
+When the table is filled in, record the findings in section 2.0 style
+(what was measured, what it shows) and update section 6 with the count
+mismatch explanation.
 
 ## 5. Decisions
 
