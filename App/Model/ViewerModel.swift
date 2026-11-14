@@ -190,6 +190,14 @@ final class ViewerModel {
     var isShowingIndexingDetails = false
     @ObservationIgnored private var estimator = ProgressEstimator()
     @ObservationIgnored private var isFillingIn = false
+    /// Stops the sync or duplicate check in progress; nil when idle.
+    @ObservationIgnored private var stopCurrentWork: (() -> Void)?
+    /// Library changes waiting to be applied, and the source they belong to
+    /// when they arrived during indexing.
+    @ObservationIgnored private var pendingUpserts: [String: LibraryAsset] = [:]
+    @ObservationIgnored private var pendingRemovals: Set<String> = []
+    @ObservationIgnored private var pendingLibraryChangesSource: Int64?
+    @ObservationIgnored private var libraryChangeDelay: Task<Void, Never>?
     @ObservationIgnored private var fillInPending = false
     @ObservationIgnored private let dock = DockProgress()
 
@@ -373,6 +381,8 @@ final class ViewerModel {
     }
 
     func removeSource(_ id: Int64) {
+        if syncingSourceID == id { stopCurrentWork?() }
+        syncQueue.removeAll { $0 == id }
         disconnect(id)
         access.stop(id)
         perform { try await $0.removeSource(id) }
@@ -509,6 +519,14 @@ final class ViewerModel {
         if UserDefaults.standard.bool(forKey: "DebugShowSources") {
             isShowingSources = true
         }
+        // -DebugStopAfter <seconds> presses Stop, to test stopping.
+        let stopAfter = UserDefaults.standard.double(forKey: "DebugStopAfter")
+        if stopAfter > 0 {
+            Task {
+                try? await Task.sleep(for: .seconds(stopAfter))
+                stopCurrentIndexing()
+            }
+        }
         // -DebugShowIndexingDetails YES opens the toolbar progress popover.
         if UserDefaults.standard.bool(forKey: "DebugShowIndexingDetails") {
             isShowingIndexingDetails = true
@@ -564,14 +582,13 @@ final class ViewerModel {
         }
     }
 
-    /// Resyncs the library 5 seconds after it stops changing. Photos reports
-    /// many small changes, e.g. during iCloud syncing.
+    /// Watches the library for changes (see `handleLibraryChange`).
     private func observeLibrary(_ id: Int64) {
         guard libraryObservation == nil, !isStartingLibraryObservation else { return }
         isStartingLibraryObservation = true
         let library = photoLibrary
-        let onChange: @Sendable () -> Void = { [weak self] in
-            Task { @MainActor in self?.scheduleLibrarySync(id) }
+        let onChange: @Sendable (LibraryChange) -> Void = { [weak self] change in
+            Task { @MainActor in self?.handleLibraryChange(id, change) }
         }
         Task {
             // Off the main thread: registering opens the library, which can
@@ -588,11 +605,61 @@ final class ViewerModel {
         Task { await observation.stop() }
     }
 
+    /// A full resync, 30 seconds after the library stops changing. Only for
+    /// changes Photos can't describe; Photos reports many small changes,
+    /// e.g. while it analyzes or syncs.
     private func scheduleLibrarySync(_ id: Int64) {
         librarySyncDelay?.cancel()
         librarySyncDelay = Task {
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(30))
             guard !Task.isCancelled else { return }
+            enqueueSync([id])
+        }
+    }
+
+    /// Applies exact library changes without a full resync (plan 3.6),
+    /// half a second after the last one. A stopped library stays as it is.
+    private func handleLibraryChange(_ id: Int64, _ change: LibraryChange) {
+        guard source(id: id)?.isStopped != true else { return }
+        switch change {
+        case .unknown:
+            scheduleLibrarySync(id)
+        case .assets(let upserted, let removed):
+            for asset in upserted {
+                pendingUpserts[asset.localIdentifier] = asset
+                pendingRemovals.remove(asset.localIdentifier)
+            }
+            for id in removed {
+                pendingRemovals.insert(id)
+                pendingUpserts[id] = nil
+            }
+            libraryChangeDelay?.cancel()
+            libraryChangeDelay = Task {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                await applyPendingLibraryChanges(id)
+            }
+        }
+    }
+
+    private func applyPendingLibraryChanges(_ id: Int64) async {
+        guard !pendingUpserts.isEmpty || !pendingRemovals.isEmpty else { return }
+        // During indexing, wait: they're applied when the round ends.
+        guard !isSyncing else {
+            pendingLibraryChangesSource = id
+            return
+        }
+        let upserted = Array(pendingUpserts.values)
+        let removed = Array(pendingRemovals)
+        pendingUpserts = [:]
+        pendingRemovals = []
+        do {
+            let count = try await index.applyLibraryChanges(sourceID: id, upserted: upserted, removed: removed,
+                                                            library: photoLibrary)
+            logger.notice("Applied \(count, privacy: .public) library changes without a resync")
+            await refresh(keepPosition: true)
+        } catch {
+            logger.error("Applying library changes failed, resyncing: \(error.localizedDescription, privacy: .public)")
             enqueueSync([id])
         }
     }
@@ -651,7 +718,9 @@ final class ViewerModel {
     /// Queues sources for syncing. Syncs run one at a time.
     private func enqueueSync(_ ids: [Int64]) {
         let before = syncQueue.count
-        for id in ids where !syncQueue.contains(id) {
+        // A stopped source isn't indexed until the user resumes it.
+        let stopped = Set(sources.filter(\.isStopped).map(\.id))
+        for id in ids where !syncQueue.contains(id) && !stopped.contains(id) {
             syncQueue.append(id)
         }
         let added = syncQueue.count - before
@@ -680,6 +749,10 @@ final class ViewerModel {
             roundSteps = 0
             roundStepsDone = 0
             progressChanged()
+            if let id = pendingLibraryChangesSource {
+                pendingLibraryChangesSource = nil
+                Task { await applyPendingLibraryChanges(id) }
+            }
         }
         while !syncQueue.isEmpty {
             let id = syncQueue.removeFirst()
@@ -716,21 +789,26 @@ final class ViewerModel {
             let onPhotosAvailable: @Sendable () -> Void = { [weak self] in
                 Task { @MainActor in self?.fillIn() }
             }
-            do {
-                let result = if let root {
+            let index = index, library = photoLibrary, windows = priorityWindows()
+            let work = Task { () async throws -> SyncResult in
+                if let root {
                     try await index.sync(sourceID: id, root: root, onProgress: onProgress,
                                          onPhotosAvailable: onPhotosAvailable)
                 } else {
-                    try await index.syncLibrary(sourceID: id, library: photoLibrary,
-                                                priorityWindows: priorityWindows(),
+                    try await index.syncLibrary(sourceID: id, library: library, priorityWindows: windows,
                                                 onProgress: onProgress, onPhotosAvailable: onPhotosAvailable)
                 }
+            }
+            switch await waitOrStop(work) {
+            case .finished(let result):
                 logger.notice("Sync of source \(id, privacy: .public) done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
-            } catch PhotoIndexError.rootUnavailable {
+            case .failed(PhotoIndexError.rootUnavailable):
                 logger.notice("Source \(id, privacy: .public) is offline")
                 disconnect(id)
                 try? await index.setOnline(false, forSource: id)
-            } catch {
+            case .stopped, .failed(is CancellationError):
+                logger.notice("Source \(id, privacy: .public) stopped after \((ContinuousClock.now - start).description, privacy: .public)")
+            case .failed(let error):
                 logger.error("Sync of source \(id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
             syncingSourceID = nil
@@ -770,24 +848,97 @@ final class ViewerModel {
         syncGeneration += 1
         let generation = syncGeneration
         let start = ContinuousClock.now
-        do {
-            let hashed = try await index.findDuplicates(roots: roots) { [weak self] progress in
-                Task { @MainActor in
-                    guard let self, self.syncGeneration == generation, self.isSyncing else { return }
-                    self.scanProgress = progress
-                    self.progressChanged()
-                }
+        let index = index, roots = roots
+        let onProgress: @Sendable (ScanProgress) -> Void = { [weak self] progress in
+            Task { @MainActor in
+                guard let self, self.syncGeneration == generation, self.isSyncing else { return }
+                self.scanProgress = progress
+                self.progressChanged()
             }
+        }
+        let work = Task { try await index.findDuplicates(roots: roots, onProgress: onProgress) }
+        switch await waitOrStop(work) {
+        case .finished(let hashed):
             if hashed > 0 {
                 logger.notice("Duplicate check hashed \(hashed, privacy: .public) files in \((ContinuousClock.now - start).description, privacy: .public)")
             }
-        } catch {
+        case .stopped, .failed(is CancellationError):
+            logger.notice("Duplicate check stopped")
+        case .failed(let error):
             logger.error("Duplicate check failed: \(error.localizedDescription, privacy: .public)")
         }
         scanProgress = nil
         roundStepsDone += 1
         progressChanged()
         await refresh(keepPosition: true)
+    }
+
+    // MARK: Stop and resume (plan 3.5)
+
+    /// Stops indexing a source, whether running or waiting. Photos indexed so
+    /// far stay visible. It stays stopped, even across launches, until
+    /// resumed. If its Photos library is still opening, the app stops
+    /// waiting; macOS may finish opening it in the background.
+    func stopIndexing(_ id: Int64) {
+        setStoppedLocally(id, true)
+        if syncingSourceID == id {
+            stopCurrentWork?()
+        } else if let position = syncQueue.firstIndex(of: id) {
+            syncQueue.remove(at: position)
+            roundSteps = max(roundStepsDone + 1, roundSteps - 1)
+            progressChanged()
+        }
+    }
+
+    /// The popover's Stop: the source being indexed, or the duplicate check.
+    func stopCurrentIndexing() {
+        if let id = syncingSourceID {
+            stopIndexing(id)
+        } else {
+            stopCurrentWork?()
+        }
+    }
+
+    /// Resumes a stopped source; indexing continues where it left off.
+    func resumeIndexing(_ id: Int64) {
+        setStoppedLocally(id, false)
+        enqueueSync([id])
+    }
+
+    /// Updates the flag at once (so queueing sees it) and in the index.
+    private func setStoppedLocally(_ id: Int64, _ isStopped: Bool) {
+        if let position = sources.firstIndex(where: { $0.id == id }) {
+            sources[position].isStopped = isStopped
+        }
+        perform { try await $0.setStopped(isStopped, forSource: id) }
+    }
+
+    private enum WorkOutcome<Value: Sendable>: Sendable {
+        case finished(Value)
+        case failed(any Error)
+        /// The user stopped it; the work was cancelled and isn't awaited.
+        case stopped
+    }
+
+    /// Waits for `work`, unless the user stops it first: then cancels it and
+    /// returns at once, even if the work is stuck in a call that can't be
+    /// interrupted (such as PhotoKit opening a library).
+    private func waitOrStop<Value: Sendable>(_ work: Task<Value, Error>) async -> WorkOutcome<Value> {
+        let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<WorkOutcome<Value>, Never>) in
+            let once = ResumeOnce(continuation)
+            stopCurrentWork = {
+                work.cancel()
+                once.resume(.stopped)
+            }
+            Task {
+                switch await work.result {
+                case .success(let value): once.resume(.finished(value))
+                case .failure(let error): once.resume(.failed(error))
+                }
+            }
+        }
+        stopCurrentWork = nil
+        return outcome
     }
 
     // MARK: Reloading
@@ -931,3 +1082,22 @@ private enum DebugDayParser {
     }
 }
 #endif
+
+/// Resumes a continuation exactly once, from whichever caller is first.
+private final class ResumeOnce<Value: Sendable>: @unchecked Sendable {
+    // Safe: `continuation` is only touched under `lock`.
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Never>?
+
+    init(_ continuation: CheckedContinuation<Value, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ value: Value) {
+        lock.withLock {
+            let pending = continuation
+            continuation = nil
+            return pending
+        }?.resume(returning: value)
+    }
+}

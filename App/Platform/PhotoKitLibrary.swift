@@ -17,9 +17,10 @@ protocol AppPhotoLibrary: PhotoLibraryProviding {
     func accessGranted() async -> Bool
     /// Asks for access if needed. Returns whether the app may read photos.
     func requestAccess() async -> Bool
-    /// Starts calling `handler` when the library changes. Stop the returned
+    /// Starts calling `handler` when the library's images change, with
+    /// exactly what changed when Photos can say. Stop the returned
     /// observation to end it.
-    func startObservingChanges(_ handler: @escaping @Sendable () -> Void) async -> LibraryObservation?
+    func startObservingChanges(_ handler: @escaping @Sendable (LibraryChange) -> Void) async -> LibraryObservation?
 }
 
 /// An active change observation. `stop()` runs off the main thread.
@@ -46,11 +47,14 @@ struct PhotoKitLibrary: AppPhotoLibrary {
     }
 
     @concurrent
-    func startObservingChanges(_ handler: @escaping @Sendable () -> Void) async -> LibraryObservation? {
+    func startObservingChanges(_ handler: @escaping @Sendable (LibraryChange) -> Void) async -> LibraryObservation? {
         // `register` opens the library: this is the call that blocked the
         // main thread for 20 minutes. Off the main thread it only blocks here.
         let observer = PhotoKitChangeObserver(handler: handler)
         PHPhotoLibrary.shared().register(observer)
+        // The same query as indexing, so its change details say exactly
+        // which images were added, changed, or removed.
+        observer.track(PHAsset.fetchAssets(with: Self.imageFetchOptions()))
         return observer
     }
 
@@ -163,19 +167,44 @@ private struct PhotoKitAssetList: LibraryAssetList, @unchecked Sendable {
     }
 }
 
-/// Calls a handler whenever the Photos library changes.
+/// Reports changes to the library's images. With a tracked fetch result,
+/// PhotoKit's change details give exactly what was added, changed, or
+/// removed; otherwise the change is reported as unknown.
 private final class PhotoKitChangeObserver: NSObject, PHPhotoLibraryChangeObserver, LibraryObservation,
                                            @unchecked Sendable {
-    // Immutable after init; PhotoKit calls `photoLibraryDidChange` on its own queue.
-    private let handler: @Sendable () -> Void
+    // Safe: `tracked` is only touched under `lock`; `handler` is immutable.
+    private let handler: @Sendable (LibraryChange) -> Void
+    private let lock = NSLock()
+    private var tracked: PHFetchResult<PHAsset>?
 
-    init(handler: @escaping @Sendable () -> Void) {
+    init(handler: @escaping @Sendable (LibraryChange) -> Void) {
         self.handler = handler
         super.init()
     }
 
+    func track(_ result: PHFetchResult<PHAsset>) {
+        lock.withLock { tracked = result }
+    }
+
     func photoLibraryDidChange(_ changeInstance: PHChange) {
-        handler()
+        let change: LibraryChange? = lock.withLock {
+            guard let current = tracked else { return .unknown }
+            // Nil: nothing changed among the tracked images.
+            guard let details = changeInstance.changeDetails(for: current) else { return nil }
+            tracked = details.fetchResultAfterChanges
+            guard details.hasIncrementalChanges else { return .unknown }
+            let upserted = (details.insertedObjects + details.changedObjects).map(Self.asset(from:))
+            return .assets(upserted: upserted, removed: details.removedObjects.map(\.localIdentifier))
+        }
+        if let change { handler(change) }
+    }
+
+    private static func asset(from asset: PHAsset) -> LibraryAsset {
+        LibraryAsset(localIdentifier: asset.localIdentifier,
+                     creationDate: asset.creationDate,
+                     modificationDate: asset.modificationDate,
+                     pixelWidth: asset.pixelWidth,
+                     pixelHeight: asset.pixelHeight)
     }
 
     @concurrent
@@ -285,7 +314,7 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
     @concurrent func requestAccess() async -> Bool { true }
 
     @concurrent
-    func startObservingChanges(_ handler: @escaping @Sendable () -> Void) async -> LibraryObservation? {
+    func startObservingChanges(_ handler: @escaping @Sendable (LibraryChange) -> Void) async -> LibraryObservation? {
         waitForOpen()
         return nil
     }

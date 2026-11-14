@@ -35,10 +35,14 @@ public enum FolderScanner {
     /// videos, sidecars, and unreadable entries. Never throws: an unreadable
     /// subfolder is skipped and the walk goes on.
     ///
-    /// - Parameter onProgress: called every `progressInterval` files found.
+    /// - Parameters:
+    ///   - onProgress: called every `progressInterval` files found.
+    ///   - isCancelled: checked per entry; the walk ends early when true.
+    ///     Callers must then treat the result as incomplete.
     public static func scan(
         _ root: URL,
         progressInterval: Int = 500,
+        isCancelled: () -> Bool = { false },
         onProgress: (Int) -> Void = { _ in }
     ) -> [ScannedFile] {
         let root = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -58,6 +62,7 @@ public enum FolderScanner {
         let keySet = Set(keys)
         var results: [ScannedFile] = []
         for case let url as URL in enumerator {
+            if isCancelled() { break }
             let kind = MediaKind.classify(pathExtension: url.pathExtension)
             guard kind.isDisplayable,
                   let values = try? url.resourceValues(forKeys: keySet),

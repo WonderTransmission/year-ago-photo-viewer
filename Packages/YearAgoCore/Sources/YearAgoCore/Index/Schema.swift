@@ -2,7 +2,7 @@
 enum Schema {
     /// The newest schema version. Bump it and add a migration step to change
     /// the schema.
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     /// Brings `database` up to `currentVersion`.
     static func migrate(_ database: Database) throws {
@@ -14,6 +14,9 @@ enum Schema {
             }
             if version < 2 {
                 try database.execute(version2)
+            }
+            if version < 3 {
+                try database.execute(version3)
             }
             try database.setUserVersion(currentVersion)
         }
@@ -65,6 +68,13 @@ enum Schema {
         """
 
     /// M6: lookups for RAW partners and content duplicates.
+    /// Plan step 4.6: a source the user stopped stays stopped; the last
+    /// known item count lets a stopped source say "4,210 of 9,755".
+    private static let version3 = """
+        ALTER TABLE sources ADD COLUMN is_stopped INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE sources ADD COLUMN known_total INTEGER;
+        """
+
     private static let version2 = """
         CREATE INDEX photos_pair ON photos(pair_primary);
         CREATE INDEX photos_hash ON photos(content_hash);

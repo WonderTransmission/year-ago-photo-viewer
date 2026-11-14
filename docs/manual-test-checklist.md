@@ -50,7 +50,10 @@ Tip: copy the boxes into a release issue and tick them there.
 - [ ] **iCloud.** A photo whose original is only in iCloud still loads,
   perhaps after a short delay.
 - [ ] **Edit in Photos.** Change a photo's date in Photos (Image › Adjust Date
-  and Time). Within about 10 seconds it moves to its new date in the viewer.
+  and Time). Within about a second it moves to its new date in the viewer,
+  without the toolbar showing a full re-index.
+- [ ] **Delete and import in Photos.** Delete a photo from this week last
+  year, then import a new one dated then. Both changes show within a second.
 - [ ] **File name dates.** Set the Photos Library source to "File name".
   Screenshots in the library appear by their file-name date. The first
   switch fetches file names with progress; later switches are instant.
@@ -69,6 +72,14 @@ Tip: copy the boxes into a release issue and tick them there.
   eject the drive and relaunch. The source shows "Unavailable", not
   "No Access…", and its index is kept. Reconnect: it comes back.
 - [ ] **Bursts.** Burst photos in the library all appear, not just one.
+- [ ] **Stop and Resume.** While a source indexes, click the toolbar progress
+  and **Stop**. Indexing ends within a second or two; photos indexed so far
+  stay. The Sources panel shows "Stopped — N of M" with **Resume**. Quit and
+  relaunch: the source stays stopped. Click Resume: it continues, reading only
+  what's left.
+- [ ] **Stop while opening.** While "Opening your Photos library…" shows,
+  stop the library from the Sources panel. The app stops waiting at once;
+  other sources keep indexing.
 - [ ] **This week first.** Remove the Photos Library source and add it again.
   Within seconds of the library opening, this week's photos from past years
   appear, while the toolbar still shows indexing progress.

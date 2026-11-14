@@ -57,6 +57,13 @@ struct IndexingDetailsView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                HStack {
+                    Spacer()
+                    Button("Stop", systemImage: "stop.circle") { model.stopCurrentIndexing() }
+                        .help(model.syncingSourceID == nil
+                              ? "Stop checking for duplicates. It runs again after the next index."
+                              : "Stop indexing this source. Photos indexed so far stay. Resume it from the Sources panel.")
+                }
             } else {
                 Text("All sources are up to date.")
                     .foregroundStyle(.secondary)

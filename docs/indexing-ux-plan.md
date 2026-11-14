@@ -315,7 +315,23 @@ visible and the viewer reloads, keeping the current photo.
 - **Done when:** with a large library, this week's photos show within
   seconds of adding it.
 
-### 4.6 Stop, resume, incremental changes
+### 4.6 Stop, resume, incremental changes (done)
+
+Result, with a slowed fake library behind a folder: Stop at 14 s kept the
+2,183 rows read so far, visible; the source is saved as stopped and the
+Sources panel shows "Stopped — 2,183 of 10,000" with Resume. A relaunch
+synced only the folder. With the library stuck in a 60 s open, Stop at 5 s
+released the app at 5.05 s. Tests cover keeping partial rows, resuming only
+the rest, a stopped folder walk deleting nothing, a stuck library open not
+blocking other syncs, the saved flag, and applying library changes.
+
+The library sync now opens the library before taking the index's sync lock,
+so a stopped open that keeps running in PhotoKit can't block other sources.
+Incremental changes use PhotoKit change details on a tracked fetch of the
+library's images; they apply half a second after the last change, or after
+the current round if indexing. Changes Photos can't describe still trigger a
+full resync, after 30 s of quiet. The real PhotoKit path is in the manual
+checklist.
 
 - Stop and Resume, the saved stopped flag, and resume after quit (3.5).
 - Incremental library changes via change details (3.6).

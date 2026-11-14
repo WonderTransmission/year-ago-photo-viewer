@@ -19,6 +19,12 @@ public struct SourceRecord: Identifiable, Equatable, Sendable {
     /// False when the folder cannot be reached, e.g. its drive is unplugged.
     public var isOnline: Bool
     public var sortOrder: Int
+    /// True when the user stopped indexing it; it isn't re-indexed until
+    /// resumed.
+    public var isStopped: Bool = false
+    /// Items the source had at its last sync (library assets, or files
+    /// found in the folder), if known.
+    public var knownTotal: Int?
 }
 
 /// Per-source counts for the Sources panel.
@@ -38,7 +44,8 @@ extension PhotoIndex {
     /// All sources, in the user's order.
     public func sources() throws -> [SourceRecord] {
         let query = try database.prepare("""
-            SELECT id, kind, name, root_path, bookmark, date_source, is_enabled, is_online, sort_order
+            SELECT id, kind, name, root_path, bookmark, date_source, is_enabled, is_online, sort_order,
+                   is_stopped, known_total
             FROM sources ORDER BY sort_order, id
             """)
         try query.bind([])
@@ -53,7 +60,9 @@ extension PhotoIndex {
                 dateSource: DateSourceKind(rawValue: query.text(5)) ?? .exif,
                 isEnabled: query.int64(6) != 0,
                 isOnline: query.int64(7) != 0,
-                sortOrder: Int(query.int64(8))))
+                sortOrder: Int(query.int64(8)),
+                isStopped: query.int64(9) != 0,
+                knownTotal: query.optionalInt64(10).map(Int.init)))
         }
         return result
     }
@@ -110,6 +119,17 @@ extension PhotoIndex {
         if database.changes > 0 {
             try refreshDerived()
         }
+    }
+
+    /// Marks a source stopped (not re-indexed until resumed) or resumed.
+    public func setStopped(_ isStopped: Bool, forSource id: Int64) throws {
+        try database.prepare("UPDATE sources SET is_stopped = ? WHERE id = ?")
+            .run([.int(isStopped ? 1 : 0), .int(id)])
+    }
+
+    /// Records how many items a source had at its latest sync.
+    func setKnownTotal(_ total: Int, forSource id: Int64) throws {
+        try database.prepare("UPDATE sources SET known_total = ? WHERE id = ?").run([.int(Int64(total)), .int(id)])
     }
 
     /// Changes which date a source uses. Takes effect without a rescan.

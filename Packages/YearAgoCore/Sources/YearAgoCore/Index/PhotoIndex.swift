@@ -93,13 +93,31 @@ public actor PhotoIndex {
         else { throw PhotoIndexError.rootUnavailable }
         isSyncing = true
         defer { isSyncing = false }
+        do {
+            return try await syncFolder(sourceID: sourceID, root: root, onProgress: onProgress,
+                                        onPhotosAvailable: onPhotosAvailable)
+        } catch is CancellationError {
+            // Stopped: keep and show what was read; delete nothing.
+            try updatePairs(sourceID: sourceID)
+            try refreshDerived()
+            throw CancellationError()
+        }
+    }
 
+    private func syncFolder(
+        sourceID: Int64,
+        root: URL,
+        onProgress: @escaping @Sendable (ScanProgress) -> Void,
+        onPhotosAvailable: @escaping @Sendable () -> Void
+    ) async throws -> SyncResult {
         let progress = ProgressReporter(plan: .folder, onProgress: onProgress)
         let existing = try existingFiles(sourceID: sourceID)
         // While walking, the last index's file count is the estimate.
         progress.finding(0, estimate: existing.count)
         let files = await Self.scanFolder(root, estimate: existing.count, progress: progress)
+        // A stopped walk is incomplete: never treat unseen files as deleted.
         try Task.checkCancellation()
+        try setKnownTotal(files.count, forSource: sourceID)
 
         var present = Set<String>()
         present.reserveCapacity(files.count)
@@ -191,7 +209,7 @@ public actor PhotoIndex {
     @concurrent
     private static func scanFolder(_ root: URL, estimate: Int,
                                    progress: ProgressReporter) async -> [ScannedFile] {
-        FolderScanner.scan(root) { found in
+        FolderScanner.scan(root, isCancelled: { Task.isCancelled }) { found in
             progress.finding(found, estimate: estimate)
         }
     }

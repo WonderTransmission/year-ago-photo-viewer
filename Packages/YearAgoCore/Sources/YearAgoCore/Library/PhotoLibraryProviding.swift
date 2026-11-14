@@ -51,6 +51,14 @@ extension PhotoLibraryProviding {
     }
 }
 
+/// A change in the Photos library, as reported by change notifications.
+public enum LibraryChange: Sendable {
+    /// Exactly which image assets were added or changed, and which removed.
+    case assets(upserted: [LibraryAsset], removed: [String])
+    /// Something changed, but the details aren't available: resync.
+    case unknown
+}
+
 /// The library's image assets, read in ranges.
 public protocol LibraryAssetList: Sendable {
     var count: Int { get }

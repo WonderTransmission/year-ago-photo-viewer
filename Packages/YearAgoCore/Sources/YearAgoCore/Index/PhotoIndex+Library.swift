@@ -46,16 +46,40 @@ extension PhotoIndex {
         onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in },
         onPhotosAvailable: @escaping @Sendable () -> Void = {}
     ) async throws -> SyncResult {
-        guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
-        isSyncing = true
-        defer { isSyncing = false }
-
         let fetchesNames = try sources().first(where: { $0.id == sourceID })?.dateSource == .fileName
         let progress = ProgressReporter(plan: .library(fetchesNames: fetchesNames), onProgress: onProgress)
 
-        // The first PhotoKit call waits for macOS to open the library.
+        // The first PhotoKit call waits for macOS to open the library, which
+        // can take many minutes and can't be interrupted. It happens before
+        // taking the sync lock, so a stopped open that is still finishing in
+        // the background never blocks other sources' syncs.
         progress.report(.opening)
+        let list = try await library.openImageAssets()
+        try Task.checkCancellation()
 
+        guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
+        isSyncing = true
+        defer { isSyncing = false }
+        do {
+            return try await syncOpenedLibrary(list, sourceID: sourceID, library: library,
+                                               fetchesNames: fetchesNames, priorityWindows: priorityWindows,
+                                               progress: progress, onPhotosAvailable: onPhotosAvailable)
+        } catch is CancellationError {
+            // Stopped: keep and show what was read; delete nothing.
+            try refreshDerived()
+            throw CancellationError()
+        }
+    }
+
+    private func syncOpenedLibrary(
+        _ list: any LibraryAssetList,
+        sourceID: Int64,
+        library: any PhotoLibraryProviding,
+        fetchesNames: Bool,
+        priorityWindows: [ClosedRange<LocalDateTime>],
+        progress: ProgressReporter,
+        onPhotosAvailable: @escaping @Sendable () -> Void
+    ) async throws -> SyncResult {
         // First index: show this week's photos from past years right away.
         var priorityRead = 0
         if !priorityWindows.isEmpty, try existingFiles(sourceID: sourceID).isEmpty {
@@ -65,8 +89,6 @@ extension PhotoIndex {
             }
         }
 
-        let list = try await library.openImageAssets()
-        try Task.checkCancellation()
         let total = list.count
 
         // Loaded after the priority pass, so its rows are skipped below.
@@ -76,6 +98,7 @@ extension PhotoIndex {
         if total == 0 && !existing.isEmpty {
             throw PhotoIndexError.rootUnavailable
         }
+        try setKnownTotal(total, forSource: sourceID)
 
         // Read in batches; each is written before the next is read, so the
         // index fills in as it goes and a stop or quit loses nothing.
@@ -114,6 +137,36 @@ extension PhotoIndex {
         try refreshDerived()
         progress.report(.organizing, 1, of: 1)
         return SyncResult(scanned: total, read: changedCount, removed: removed.count)
+    }
+
+    /// Applies a reported library change without a full resync: stores
+    /// added and changed assets, deletes removed ones, and refreshes what's
+    /// visible. Fetches file names for new assets if the source uses File
+    /// name dates.
+    /// - Throws: `PhotoIndexError.syncAlreadyRunning` during a sync (resync
+    ///   afterwards instead), or a database error.
+    @discardableResult
+    public func applyLibraryChanges(sourceID: Int64, upserted: [LibraryAsset], removed: [String],
+                                    library: any PhotoLibraryProviding) async throws -> Int {
+        guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        try upsert(upserted.map(record(for:)), sourceID: sourceID)
+        try deleteFiles(sourceID: sourceID, locators: removed)
+        if try sources().first(where: { $0.id == sourceID })?.dateSource == .fileName, !upserted.isEmpty {
+            let names = await library.originalFileNames(for: upserted.map(\.localIdentifier))
+            let parser = FileNameDateParser.standard()
+            let update = try database.prepare(
+                "UPDATE photos SET file_name = ?, date_file_name = ? WHERE source_id = ? AND locator = ?")
+            try database.transaction {
+                for (id, name) in names {
+                    try update.run([.text(name), .date(parser.date(fromFileName: name)), .int(sourceID), .text(id)])
+                }
+            }
+        }
+        try refreshDerived()
+        return upserted.count + removed.count
     }
 
     /// Reads and stores the library photos created in `windows`, widened by

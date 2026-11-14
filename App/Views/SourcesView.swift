@@ -49,7 +49,7 @@ struct SourcesView: View {
             }
             .padding()
         }
-        .frame(minWidth: 680, minHeight: 360)
+        .frame(minWidth: 800, minHeight: 360)
         .fileImporter(isPresented: $isAddingFolder, allowedContentTypes: [.folder],
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
@@ -110,12 +110,29 @@ private struct SourceRow: View {
             .help(source.dateSource.helpText)
 
             status
-                .frame(width: 170, alignment: .trailing)
+                .frame(width: 280, alignment: .trailing)
         }
         .padding(.vertical, 2)
         .opacity(source.isEnabled ? 1 : 0.6)
         .onAppear { draftName = source.name }
         .onChange(of: source.name) { _, name in draftName = name }
+    }
+
+    /// Stops indexing this source; it stays stopped until resumed.
+    private var stopButton: some View {
+        Button("Stop Indexing", systemImage: "stop.circle") { model.stopIndexing(source.id) }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Stop indexing. Photos indexed so far stay. Resume any time.")
+    }
+
+    /// "Stopped — 1,500 of 10,000" (or just the count when the total isn't known).
+    private var stoppedText: String {
+        let indexed = model.sourceStats[source.id]?.files ?? 0
+        if let total = source.knownTotal, total > 0 {
+            return "Stopped — \(indexed.formatted()) of \(total.formatted())"
+        }
+        return "Stopped — \(indexed.formatted()) indexed"
     }
 
     @ViewBuilder
@@ -132,28 +149,39 @@ private struct SourceRow: View {
             Label("Offline", systemImage: "externaldrive.badge.xmark")
                 .foregroundStyle(.secondary)
                 .help("The folder can't be reached. Its index is kept until it returns.")
+        } else if source.isStopped {
+            HStack(spacing: 6) {
+                Text(stoppedText)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Button("Resume") { model.resumeIndexing(source.id) }
+                    .controlSize(.small)
+                    .help("Continue indexing where it stopped.")
+            }
         } else if model.syncingSourceID == source.id {
-            if let progress = model.scanProgress, !progress.isIndeterminate || progress.fraction > 0 {
-                HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                if let progress = model.scanProgress, !progress.isIndeterminate || progress.fraction > 0 {
                     ProgressView(value: progress.fraction)
                         .frame(width: 90)
                     Text("\(progress.percent)%")
                         .monospacedDigit()
                         .frame(width: 38, alignment: .trailing)
-                }
-                .foregroundStyle(.secondary)
-                .help(DisplayFormat.progress(progress))
-            } else {
-                HStack(spacing: 6) {
+                } else {
                     ProgressView().controlSize(.small)
                     Text(model.scanProgress.map(DisplayFormat.shortProgress) ?? "Starting…")
                 }
-                .foregroundStyle(.secondary)
+                stopButton
             }
+            .foregroundStyle(.secondary)
+            .help(model.scanProgress.map(DisplayFormat.progress) ?? "Indexing")
         } else if model.waitingSourceIDs.contains(source.id) {
-            Label("Waiting", systemImage: "clock")
-                .foregroundStyle(.secondary)
-                .help("Indexes after the sources before it.")
+            HStack(spacing: 6) {
+                Label("Waiting", systemImage: "clock")
+                    .foregroundStyle(.secondary)
+                    .help("Indexes after the sources before it.")
+                stopButton
+            }
         } else {
             let visible = model.sourceStats[source.id]?.visible ?? 0
             Text(visible == 1 ? "1 photo" : "\(visible.formatted()) photos")
