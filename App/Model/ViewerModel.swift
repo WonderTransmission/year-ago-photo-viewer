@@ -189,6 +189,8 @@ final class ViewerModel {
     /// Drives the toolbar's indexing details popover.
     var isShowingIndexingDetails = false
     @ObservationIgnored private var estimator = ProgressEstimator()
+    @ObservationIgnored private var isFillingIn = false
+    @ObservationIgnored private var fillInPending = false
     @ObservationIgnored private let dock = DockProgress()
 
     /// True while sources are being indexed or checked for duplicates.
@@ -711,11 +713,17 @@ final class ViewerModel {
                     }
                 }
             }
+            let onPhotosAvailable: @Sendable () -> Void = { [weak self] in
+                Task { @MainActor in self?.fillIn() }
+            }
             do {
                 let result = if let root {
-                    try await index.sync(sourceID: id, root: root, onProgress: onProgress)
+                    try await index.sync(sourceID: id, root: root, onProgress: onProgress,
+                                         onPhotosAvailable: onPhotosAvailable)
                 } else {
-                    try await index.syncLibrary(sourceID: id, library: photoLibrary, onProgress: onProgress)
+                    try await index.syncLibrary(sourceID: id, library: photoLibrary,
+                                                priorityWindows: priorityWindows(),
+                                                onProgress: onProgress, onPhotosAvailable: onPhotosAvailable)
                 }
                 logger.notice("Sync of source \(id, privacy: .public) done in \((ContinuousClock.now - start).description, privacy: .public): \(result.scanned, privacy: .public) files, \(result.read, privacy: .public) read, \(result.removed, privacy: .public) removed")
             } catch PhotoIndexError.rootUnavailable {
@@ -731,6 +739,29 @@ final class ViewerModel {
         }
         await findDuplicates()
         logger.notice("Years offered \(self.navigator.years.description, privacy: .public); counts \(self.navigator.photoCounts.description, privacy: .public)")
+    }
+
+    /// This week's window in each of the past 40 years, for showing those
+    /// photos first while a new Photos library is indexed.
+    private func priorityWindows() -> [ClosedRange<LocalDateTime>] {
+        (1...40).map { calculator.window(today: today, yearsAgo: $0, weeks: weeks).range }
+    }
+
+    /// Shows photos indexed so far, keeping the current photo. Calls that
+    /// arrive while a reload runs are folded into one more reload.
+    private func fillIn() {
+        guard !isFillingIn else {
+            fillInPending = true
+            return
+        }
+        isFillingIn = true
+        Task {
+            repeat {
+                fillInPending = false
+                await refresh(keepPosition: true)
+            } while fillInPending
+            isFillingIn = false
+        }
     }
 
     /// Hashes same-size files across all reachable sources and hides

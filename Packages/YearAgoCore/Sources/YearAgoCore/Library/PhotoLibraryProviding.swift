@@ -28,10 +28,27 @@ public protocol PhotoLibraryProviding: Sendable {
     /// The first call can take minutes while macOS opens the library.
     func openImageAssets() async throws -> any LibraryAssetList
 
+    /// Only the image assets created within any of `ranges`. Used to show
+    /// this week's photos from past years before the rest of the library
+    /// is read. Implementations should filter in the library (PhotoKit can
+    /// filter by date); the default reads everything and filters.
+    func openImageAssets(createdIn ranges: [ClosedRange<Date>]) async throws -> any LibraryAssetList
+
     /// Original file names, such as "IMG_1234.HEIC", by local identifier.
     /// Slow on large libraries: the index asks only when a source uses the
     /// File name date, and caches the answers.
     func originalFileNames(for localIdentifiers: [String]) async -> [String: String]
+}
+
+extension PhotoLibraryProviding {
+    public func openImageAssets(createdIn ranges: [ClosedRange<Date>]) async throws -> any LibraryAssetList {
+        let all = try await openImageAssets()
+        let assets = try await all.assets(in: 0..<all.count)
+        return ArrayAssetList(assets.filter { asset in
+            guard let created = asset.creationDate else { return false }
+            return ranges.contains { $0.contains(created) }
+        })
+    }
 }
 
 /// The library's image assets, read in ranges.

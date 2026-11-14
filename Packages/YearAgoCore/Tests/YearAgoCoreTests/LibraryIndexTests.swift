@@ -293,3 +293,101 @@ private final class Collected<Value>: @unchecked Sendable {
 private enum ProgressTestsLimits {
     static let batch = 500
 }
+
+/// Counts how often the date-filtered fetch is used.
+private final class CountingLibrary: PhotoLibraryProviding, @unchecked Sendable {
+    let all: [LibraryAsset]
+    private let lock = NSLock()
+    private var filtered = 0
+    init(_ all: [LibraryAsset]) { self.all = all }
+    var filteredFetches: Int { lock.withLock { filtered } }
+
+    func openImageAssets() async throws -> any LibraryAssetList { ArrayAssetList(all) }
+    func openImageAssets(createdIn ranges: [ClosedRange<Date>]) async throws -> any LibraryAssetList {
+        lock.withLock { filtered += 1 }
+        return ArrayAssetList(all.filter { a in ranges.contains { $0.contains(a.creationDate!) } })
+    }
+    func originalFileNames(for localIdentifiers: [String]) async -> [String: String] { [:] }
+}
+
+/// Counts calls from a @Sendable callback.
+private final class CallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func increment() { lock.withLock { value += 1 } }
+    var count: Int { lock.withLock { value } }
+}
+
+@Suite struct ThisWeekFirstTests {
+    private let utc = TimeZone(identifier: "UTC")!
+
+    /// 2,000 assets one per hour from 1 Oct 2025; 1–8 Nov 2025 holds 192.
+    private func assets() -> [LibraryAsset] {
+        let start = local(2025, 10, 1).date(in: utc)
+        return (0..<2000).map { i in
+            let date = start.addingTimeInterval(Double(i) * 3600)
+            return LibraryAsset(localIdentifier: "a\(i)", creationDate: date, modificationDate: date,
+                                pixelWidth: 100, pixelHeight: 100)
+        }
+    }
+    private let window = local(2025, 11, 1)...local(2025, 11, 8, 23, 59, 59)
+
+    @Test func thisWeeksPhotosAreVisibleBeforeTheRestIsRead() async throws {
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        let seenAtFirstBatch = Collected<Int>()
+        let library = HookedLibrary(all: assets()) { range in
+            // The first batch of the full read (not the filtered fetch).
+            if range == 0..<500 {
+                let visible = (try? await index.loadTimeline(roots: [:]).photos(in: window).count) ?? -1
+                seenAtFirstBatch.append(visible)
+            }
+        }
+        let published = CallCounter()
+        let result = try await index.syncLibrary(sourceID: source.id, library: library,
+                                                 priorityWindows: [window],
+                                                 onPhotosAvailable: { published.increment() })
+        #expect(seenAtFirstBatch.values == [192])
+        #expect(published.count >= 1)
+        #expect(result.read == 2000)   // the priority rows count once
+        #expect(try await index.fileCount(sourceID: source.id) == 2000)
+    }
+
+    @Test func rescansSkipThePriorityPass() async throws {
+        let library = CountingLibrary(assets())
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        _ = try await index.syncLibrary(sourceID: source.id, library: library, priorityWindows: [window])
+        #expect(library.filteredFetches == 1)
+        let again = try await index.syncLibrary(sourceID: source.id, library: library, priorityWindows: [window])
+        #expect(library.filteredFetches == 1)
+        #expect(again.read == 0)
+    }
+
+    @Test func librarySyncPublishesAsItGoes() async throws {
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        await index.setFillInInterval(0)
+        let source = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        let published = CallCounter()
+        _ = try await index.syncLibrary(sourceID: source.id, library: CountingLibrary(assets()),
+                                        onPhotosAvailable: { published.increment() })
+        #expect(published.count == 4)   // after each of the 4 batches of 500
+    }
+
+    @Test func folderSyncPublishesAsItGoes() async throws {
+        let root = try Fixtures.makeTemporaryDirectory()
+        defer { Fixtures.cleanUp(root) }
+        for i in 0..<300 {
+            try Data([0xFF, UInt8(i % 256)]).write(to: root.appendingPathComponent(
+                String(format: "IMG_20251101_10%02d%02d.jpg", i / 60, i % 60)))
+        }
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        await index.setFillInInterval(0)
+        let source = try await index.addFolderSource(rootPath: FolderScanner.realPath(root.path), name: "f",
+                                                     bookmark: nil, dateSource: .fileName)
+        let published = CallCounter()
+        _ = try await index.sync(sourceID: source.id, root: root, onPhotosAvailable: { published.increment() })
+        #expect(published.count >= 2)   // 300 files are read in 3 concurrent chunks
+        #expect(try await index.loadTimeline(roots: [source.id: root]).photos.count == 300)
+    }
+}

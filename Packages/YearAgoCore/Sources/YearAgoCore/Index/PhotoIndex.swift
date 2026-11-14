@@ -32,6 +32,22 @@ public actor PhotoIndex {
     let database: Database
     let timeZone: TimeZone
     var isSyncing = false
+    /// How often a long sync makes the rows written so far visible and
+    /// tells its caller, so photos fill in while it runs.
+    var fillInInterval: TimeInterval = 10
+
+    /// Changes how often long syncs publish partial results (tests).
+    public func setFillInInterval(_ seconds: TimeInterval) {
+        fillInInterval = seconds
+    }
+
+    /// Makes the rows written so far visible and notifies the caller.
+    /// Folder syncs also re-pair RAW files, so pairs don't flicker.
+    func publishFillIn(sourceID: Int64, pairs: Bool, onPhotosAvailable: @Sendable () -> Void) throws {
+        if pairs { try updatePairs(sourceID: sourceID) }
+        try refreshDerived()
+        onPhotosAvailable()
+    }
 
     /// Opens the index at `fileURL`, creating it and its folder if needed.
     /// Pass nil for a private in-memory index (tests).
@@ -60,10 +76,13 @@ public actor PhotoIndex {
     /// - Throws: `PhotoIndexError.syncAlreadyRunning` if another sync is in
     ///   progress, `PhotoIndexError.rootUnavailable` if `root` is not a
     ///   reachable folder (nothing is deleted), or a database error.
+    /// - Parameter onPhotosAvailable: called every `fillInInterval` seconds
+    ///   during a long read, once newly read photos are visible.
     public func sync(
         sourceID: Int64,
         root: URL,
-        onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in }
+        onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in },
+        onPhotosAvailable: @escaping @Sendable () -> Void = {}
     ) async throws -> SyncResult {
         guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
         // An unplugged drive looks like an empty folder. Never treat it as
@@ -96,7 +115,8 @@ public actor PhotoIndex {
         let removed = existing.keys.filter { !present.contains($0) }
         try deleteFiles(sourceID: sourceID, locators: removed)
 
-        try await readAndStore(changed, sourceID: sourceID, progress: progress)
+        try await readAndStore(changed, sourceID: sourceID, progress: progress,
+                               onPhotosAvailable: onPhotosAvailable)
         progress.report(.organizing)
         if !changed.isEmpty || !removed.isEmpty {
             try updatePairs(sourceID: sourceID)
@@ -177,7 +197,8 @@ public actor PhotoIndex {
     }
 
     private func readAndStore(_ files: [ScannedFile], sourceID: Int64,
-                              progress: ProgressReporter) async throws {
+                              progress: ProgressReporter,
+                              onPhotosAvailable: @escaping @Sendable () -> Void) async throws {
         let total = files.count
         progress.report(.reading, 0, of: total)
         guard total > 0 else { return }
@@ -195,6 +216,7 @@ public actor PhotoIndex {
             }
             var pending: [FileRecord] = []
             var completed = 0
+            var lastFillIn = Date()
             for try await records in group {
                 pending.append(contentsOf: records)
                 completed += records.count
@@ -203,6 +225,12 @@ public actor PhotoIndex {
                     pending.removeAll(keepingCapacity: true)
                 }
                 progress.report(.reading, completed, of: total)
+                if Date().timeIntervalSince(lastFillIn) >= fillInInterval {
+                    try upsert(pending, sourceID: sourceID)
+                    pending.removeAll(keepingCapacity: true)
+                    try publishFillIn(sourceID: sourceID, pairs: true, onPhotosAvailable: onPhotosAvailable)
+                    lastFillIn = Date()
+                }
             }
             try upsert(pending, sourceID: sourceID)
         }

@@ -300,7 +300,15 @@ Sources panel row shows its own bar and %, the menu bar popover shows
 - **Done when:** screenshots show each, mid-index, with a slowed fake library
   in a debug build.
 
-### 4.5 This week first, and live fill-in
+### 4.5 This week first, and live fill-in (done)
+
+Result: with a fake 10,000-photo library that takes about 45 s to index, the
+viewer showed all 74 of last year's photos for this week 8 s after launch,
+while the toolbar read "Indexing 4%". On a first index, the library sync
+fetches this week's window in each of the past 40 years first (filtered
+inside Photos, widened a day each side), then reads the rest and skips
+those rows. Every 10 s, long folder and library syncs make their rows
+visible and the viewer reloads, keeping the current photo.
 
 - Priority fetch of the current windows for the Photos library (3.4).
 - Periodic reload during long indexes.

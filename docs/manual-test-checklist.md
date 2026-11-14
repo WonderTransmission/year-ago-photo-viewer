@@ -69,6 +69,11 @@ Tip: copy the boxes into a release issue and tick them there.
   eject the drive and relaunch. The source shows "Unavailable", not
   "No Access…", and its index is kept. Reconnect: it comes back.
 - [ ] **Bursts.** Burst photos in the library all appear, not just one.
+- [ ] **This week first.** Remove the Photos Library source and add it again.
+  Within seconds of the library opening, this week's photos from past years
+  appear, while the toolbar still shows indexing progress.
+- [ ] **Fill-in.** During a long first index of a large folder, photos appear
+  and the year list grows every few seconds; the current photo stays put.
 
 ## Menu bar item (M9)
 

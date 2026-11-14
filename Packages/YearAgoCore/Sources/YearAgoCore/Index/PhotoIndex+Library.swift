@@ -33,10 +33,18 @@ extension PhotoIndex {
     /// - Throws: `PhotoIndexError.rootUnavailable` if the library returns no
     ///   assets while the index has some (e.g. its drive is disconnected);
     ///   nothing is deleted.
+    ///
+    /// - Parameters:
+    ///   - priorityWindows: on a first index, photos dated in these windows
+    ///     (this week in past years) are read and shown before the rest.
+    ///   - onPhotosAvailable: called when newly read photos are visible:
+    ///     after the priority pass, then every `fillInInterval` seconds.
     public func syncLibrary(
         sourceID: Int64,
         library: any PhotoLibraryProviding,
-        onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in }
+        priorityWindows: [ClosedRange<LocalDateTime>] = [],
+        onProgress: @escaping @Sendable (ScanProgress) -> Void = { _ in },
+        onPhotosAvailable: @escaping @Sendable () -> Void = {}
     ) async throws -> SyncResult {
         guard !isSyncing else { throw PhotoIndexError.syncAlreadyRunning }
         isSyncing = true
@@ -47,10 +55,21 @@ extension PhotoIndex {
 
         // The first PhotoKit call waits for macOS to open the library.
         progress.report(.opening)
+
+        // First index: show this week's photos from past years right away.
+        var priorityRead = 0
+        if !priorityWindows.isEmpty, try existingFiles(sourceID: sourceID).isEmpty {
+            priorityRead = try await readPriorityWindows(priorityWindows, sourceID: sourceID, library: library)
+            if priorityRead > 0 {
+                try publishFillIn(sourceID: sourceID, pairs: false, onPhotosAvailable: onPhotosAvailable)
+            }
+        }
+
         let list = try await library.openImageAssets()
         try Task.checkCancellation()
         let total = list.count
 
+        // Loaded after the priority pass, so its rows are skipped below.
         let existing = try existingFiles(sourceID: sourceID)
         // A library on a disconnected drive can look empty. Never treat that
         // as "every photo was deleted".
@@ -63,7 +82,8 @@ extension PhotoIndex {
         progress.report(.reading, 0, of: total)
         var present = Set<String>()
         present.reserveCapacity(total)
-        var changedCount = 0
+        var changedCount = priorityRead
+        var lastFillIn = Date()
         for start in stride(from: 0, to: total, by: Self.libraryBatchSize) {
             try Task.checkCancellation()
             let assets = try await list.assets(in: start..<min(start + Self.libraryBatchSize, total))
@@ -74,17 +94,15 @@ extension PhotoIndex {
                 if let known = existing[asset.localIdentifier], known.mtime == modified {
                     continue
                 }
-                let created = asset.creationDate.map { LocalDateTime($0, in: timeZone) }
-                changed.append(FileRecord(
-                    locator: asset.localIdentifier, fileName: nil, byteSize: nil, fsMtime: modified,
-                    dateFileName: nil,
-                    dateModified: asset.modificationDate.map { LocalDateTime($0, in: timeZone) },
-                    dateCreated: created, dateExif: created,
-                    pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, isRaw: false))
+                changed.append(record(for: asset))
             }
             try upsert(changed, sourceID: sourceID)
             changedCount += changed.count
             progress.report(.reading, start + assets.count, of: total)
+            if Date().timeIntervalSince(lastFillIn) >= fillInInterval {
+                try publishFillIn(sourceID: sourceID, pairs: false, onPhotosAvailable: onPhotosAvailable)
+                lastFillIn = Date()
+            }
         }
         let removed = existing.keys.filter { !present.contains($0) }
         try deleteFiles(sourceID: sourceID, locators: removed)
@@ -96,6 +114,34 @@ extension PhotoIndex {
         try refreshDerived()
         progress.report(.organizing, 1, of: 1)
         return SyncResult(scanned: total, read: changedCount, removed: removed.count)
+    }
+
+    /// Reads and stores the library photos created in `windows`, widened by
+    /// a day each side so time zones and DST can't cut photos off. Returns
+    /// how many were stored.
+    private func readPriorityWindows(_ windows: [ClosedRange<LocalDateTime>], sourceID: Int64,
+                                     library: any PhotoLibraryProviding) async throws -> Int {
+        let day: TimeInterval = 86_400
+        let ranges = windows.map { window in
+            window.lowerBound.date(in: timeZone).addingTimeInterval(-day)
+                ... window.upperBound.date(in: timeZone).addingTimeInterval(day)
+        }
+        let list = try await library.openImageAssets(createdIn: ranges)
+        let assets = try await list.assets(in: 0..<list.count)
+        try upsert(assets.map(record(for:)), sourceID: sourceID)
+        return assets.count
+    }
+
+    /// The index row for a library asset.
+    private func record(for asset: LibraryAsset) -> FileRecord {
+        let modified = asset.modificationDate.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) }
+        let created = asset.creationDate.map { LocalDateTime($0, in: timeZone) }
+        return FileRecord(
+            locator: asset.localIdentifier, fileName: nil, byteSize: nil, fsMtime: modified,
+            dateFileName: nil,
+            dateModified: asset.modificationDate.map { LocalDateTime($0, in: timeZone) },
+            dateCreated: created, dateExif: created,
+            pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, isRaw: false)
     }
 
     /// Fetches and stores original file names for library rows that lack

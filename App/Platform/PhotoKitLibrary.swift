@@ -79,6 +79,20 @@ struct PhotoKitLibrary: AppPhotoLibrary {
         return PhotoKitAssetList(result: result)
     }
 
+    @concurrent
+    func openImageAssets(createdIn ranges: [ClosedRange<Date>]) async throws -> any LibraryAssetList {
+        // Filtered inside Photos, so this is quick even on large libraries.
+        let options = Self.imageFetchOptions()
+        let dates = ranges.map {
+            NSPredicate(format: "creationDate >= %@ AND creationDate <= %@", $0.lowerBound as NSDate, $0.upperBound as NSDate)
+        }
+        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue),
+            NSCompoundPredicate(orPredicateWithSubpredicates: dates),
+        ])
+        return PhotoKitAssetList(result: PHAsset.fetchAssets(with: options))
+    }
+
     /// Images only, PhotoKit's defaults otherwise (hidden photos and
     /// non-representative burst frames excluded).
     static func imageFetchOptions() -> PHFetchOptions {
@@ -240,12 +254,21 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
     private var openedAt: Date?
 
     private let batchDelay: TimeInterval
+    /// Generated once, so every fetch sees the same library.
+    private let assets: [LibraryAsset]
 
     /// - Parameter batchDelay: pause per 500-asset batch while reading.
     init(openDelay: TimeInterval, assetCount: Int = 2_000, batchDelay: TimeInterval = 0) {
         self.openDelay = openDelay
         self.assetCount = assetCount
         self.batchDelay = batchDelay
+        // Spread over the last three years, so every year window has some.
+        let now = Date()
+        assets = (0..<assetCount).map { i in
+            let date = now.addingTimeInterval(-Double(i) * 3 * 365 * 86_400 / Double(assetCount))
+            return LibraryAsset(localIdentifier: "fake-\(i)", creationDate: date, modificationDate: date,
+                                pixelWidth: 4032, pixelHeight: 3024)
+        }
     }
 
     /// Blocks the calling thread until `openDelay` after the first call.
@@ -270,13 +293,6 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
     @concurrent
     func openImageAssets() async throws -> any LibraryAssetList {
         waitForOpen()
-        // Spread over the last three years, so every year window has some.
-        let now = Date()
-        let assets = (0..<assetCount).map { i in
-            let date = now.addingTimeInterval(-Double(i) * 3 * 365 * 86_400 / Double(assetCount))
-            return LibraryAsset(localIdentifier: "fake-\(i)", creationDate: date, modificationDate: date,
-                                pixelWidth: 4032, pixelHeight: 3024)
-        }
         return SlowList(assets: assets, perBatchDelay: batchDelay)
     }
 

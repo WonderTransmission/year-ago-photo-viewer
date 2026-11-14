@@ -65,6 +65,14 @@ public struct LocalDateTime: Comparable, Hashable, Sendable, CustomStringConvert
         return LocalDateTime(date)
     }
 
+    /// The instant this wall-clock time names in `timeZone`. Across a DST
+    /// change this can be off by the shift; callers needing exact bounds
+    /// should widen their ranges.
+    public func date(in timeZone: TimeZone) -> Date {
+        let floating = floatingDate
+        return floating.addingTimeInterval(-TimeInterval(timeZone.secondsFromGMT(for: floating)))
+    }
+
     /// This value as a `Date` whose UTC fields equal the wall-clock fields.
     /// Use it only for display, with a formatter set to the UTC time zone.
     public var dateForDisplayInUTC: Date { floatingDate }
