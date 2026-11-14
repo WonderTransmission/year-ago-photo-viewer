@@ -115,7 +115,7 @@ its SHA-256. Attach both to the GitHub release:
 
 ```sh
 Scripts/make-dmg.sh
-gh release upload v1.2 build/YearAgoPhotoViewer-1.2.0.dmg
+gh release upload v1.3 build/YearAgoPhotoViewer-1.3.0.dmg
 ```
 
 Before committing, check that no personal data slipped in:
