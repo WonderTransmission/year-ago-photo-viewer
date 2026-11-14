@@ -178,6 +178,51 @@ final class ViewerModel {
     private(set) var scanProgress: ScanProgress?
     /// A problem to show the user, e.g. a folder that could not be added.
     var errorMessage: String?
+    // MARK: Indexing progress across a round of syncs
+
+    /// Steps in the current round of syncs: each queued source, plus the
+    /// duplicate check at the end. Zero when idle.
+    private(set) var roundSteps = 0
+    private(set) var roundStepsDone = 0
+    /// Estimated seconds left in the round, once there's enough data.
+    private(set) var timeLeft: TimeInterval?
+    /// Drives the toolbar's indexing details popover.
+    var isShowingIndexingDetails = false
+    @ObservationIgnored private var estimator = ProgressEstimator()
+    @ObservationIgnored private let dock = DockProgress()
+
+    /// True while sources are being indexed or checked for duplicates.
+    var isIndexing: Bool { isSyncing }
+
+    /// Progress of the whole round, 0…1, or nil when idle.
+    var overallFraction: Double? {
+        guard isSyncing, roundSteps > 0 else { return nil }
+        let current = scanProgress?.fraction ?? 0
+        return min(1, (Double(roundStepsDone) + current) / Double(roundSteps))
+    }
+
+    /// True while nothing measurable has happened yet (e.g. the Photos
+    /// library is still opening).
+    var overallIsIndeterminate: Bool {
+        (overallFraction ?? 0) == 0 && scanProgress?.isIndeterminate != false
+    }
+
+    /// Sources waiting their turn, in order.
+    var waitingSourceIDs: [Int64] { syncQueue }
+
+    /// Records progress for the time-left estimate and the Dock icon.
+    private func progressChanged() {
+        guard let fraction = overallFraction else {
+            timeLeft = nil
+            dock.update(fraction: nil, indeterminate: false)
+            return
+        }
+        let now = Date()
+        estimator.record(fraction, at: now)
+        timeLeft = estimator.remaining(at: now)
+        dock.update(fraction: fraction, indeterminate: overallIsIndeterminate)
+    }
+
     /// When the current wait for the Photos library to open began; nil when
     /// not waiting. Drives the "Opening your Photos library…" banner.
     private(set) var libraryOpeningSince: Date?
@@ -243,8 +288,8 @@ final class ViewerModel {
     var phase: Phase {
         if !hasLoaded { return .loading }
         if sources.isEmpty { return .noSources }
-        let indexedFiles = sourceStats.values.reduce(0) { $0 + $1.files }
-        return indexedFiles == 0 && isSyncing ? .scanning : .ready
+        // The first-index screen shows until any photo is visible.
+        return timeline.photos.isEmpty && isSyncing ? .scanning : .ready
     }
 
     var currentPhoto: PhotoItem? {
@@ -462,6 +507,10 @@ final class ViewerModel {
         if UserDefaults.standard.bool(forKey: "DebugShowSources") {
             isShowingSources = true
         }
+        // -DebugShowIndexingDetails YES opens the toolbar progress popover.
+        if UserDefaults.standard.bool(forKey: "DebugShowIndexingDetails") {
+            isShowingIndexingDetails = true
+        }
         #endif
     }
 
@@ -599,8 +648,18 @@ final class ViewerModel {
 
     /// Queues sources for syncing. Syncs run one at a time.
     private func enqueueSync(_ ids: [Int64]) {
+        let before = syncQueue.count
         for id in ids where !syncQueue.contains(id) {
             syncQueue.append(id)
+        }
+        let added = syncQueue.count - before
+        if isSyncing {
+            roundSteps += added
+        } else if added > 0 {
+            // A new round: its sources plus the duplicate check.
+            roundSteps = syncQueue.count + 1
+            roundStepsDone = 0
+            estimator = ProgressEstimator()
         }
         // Folders first: opening the Photos library can take minutes, and
         // folder photos shouldn't wait behind it.
@@ -616,9 +675,17 @@ final class ViewerModel {
             isSyncing = false
             syncingSourceID = nil
             scanProgress = nil
+            roundSteps = 0
+            roundStepsDone = 0
+            progressChanged()
         }
         while !syncQueue.isEmpty {
             let id = syncQueue.removeFirst()
+            // Each source is one step of the round, even if it's skipped.
+            defer {
+                roundStepsDone += 1
+                progressChanged()
+            }
             guard let source = source(id: id), source.isEnabled else { continue }
             let root = roots[id]
             if source.kind == .folder, root == nil { continue }
@@ -636,6 +703,7 @@ final class ViewerModel {
                 Task { @MainActor in
                     guard let self, self.syncGeneration == generation, self.syncingSourceID == id else { return }
                     self.scanProgress = progress
+                    self.progressChanged()
                     if progress.stage == .opening {
                         self.libraryOpeningSince = self.libraryOpeningSince ?? Date()
                     } else {
@@ -676,6 +744,7 @@ final class ViewerModel {
                 Task { @MainActor in
                     guard let self, self.syncGeneration == generation, self.isSyncing else { return }
                     self.scanProgress = progress
+                    self.progressChanged()
                 }
             }
             if hashed > 0 {
@@ -685,6 +754,8 @@ final class ViewerModel {
             logger.error("Duplicate check failed: \(error.localizedDescription, privacy: .public)")
         }
         scanProgress = nil
+        roundStepsDone += 1
+        progressChanged()
         await refresh(keepPosition: true)
     }
 

@@ -18,9 +18,7 @@ struct ContentView: View {
             case .noSources:
                 WelcomeView { model.isAddingFolder = true }
             case .scanning:
-                ScanProgressView(
-                    sourceName: model.syncingSourceID.flatMap(model.source(id:))?.name ?? "photos",
-                    progress: model.scanProgress)
+                ScanProgressView()
             case .ready:
                 ViewerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -30,10 +28,8 @@ struct ContentView: View {
         .navigationTitle(CoreInfo.appName)
         .toolbar {
             ToolbarItemGroup {
-                if model.phase == .ready, let progress = model.scanProgress {
-                    ProgressView()
-                        .controlSize(.small)
-                        .help(DisplayFormat.progress(progress))
+                if model.isIndexing {
+                    IndexingToolbarButton()
                 }
                 Button {
                     model.isShowingSources = true
@@ -97,33 +93,41 @@ private struct DefaultDateMenu: View {
 }
 
 /// Full-window progress for the first index.
+/// Full-window progress while no photos are visible yet: overall % across
+/// all queued sources, the current step, and time left.
 private struct ScanProgressView: View {
-    let sourceName: String
-    let progress: ScanProgress?
+    @Environment(ViewerModel.self) private var model
 
     var body: some View {
         VStack(spacing: 12) {
             Text("Indexing “\(sourceName)”")
                 .font(.headline)
-            // The whole sync's percentage; a spinner only until something
-            // is measurable (e.g. while the Photos library opens).
-            if let progress, progress.fraction > 0 || !progress.isIndeterminate {
-                ProgressView(value: progress.fraction)
+            // A spinner only until something is measurable (e.g. while the
+            // Photos library opens).
+            if model.overallIsIndeterminate {
+                ProgressView()
+            } else {
+                ProgressView(value: model.overallFraction ?? 0)
                     .frame(width: 320)
-                Text("\(progress.percent)%")
+                Text("\(Int(((model.overallFraction ?? 0) * 100).rounded(.down)))%")
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
-            } else {
-                ProgressView()
             }
-            Text(progress.map(DisplayFormat.progress) ?? "Starting…")
+            Text(model.scanProgress.map(DisplayFormat.progress) ?? "Starting…")
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            if !model.overallIsIndeterminate {
+                TimeLeftLabel(seconds: model.timeLeft)
+            }
             Text("This happens once. Later launches only check for changes.")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var sourceName: String {
+        model.syncingSourceID.flatMap(model.source(id:))?.name ?? "photos"
     }
 }
 

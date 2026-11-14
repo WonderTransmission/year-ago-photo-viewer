@@ -286,7 +286,14 @@ unchanged (full index 5.5 s, rescan 2.1 s).
 - **Done when:** tests with a 200,000-asset fake library show progress rising
   steadily to 100%, with rows written before the end.
 
-### 4.4 Progress UI
+### 4.4 Progress UI (done)
+
+Result, with a slowed fake library behind a folder source: the toolbar shows
+"Indexing 53%" with a ring; its popover shows the source, its stage and
+counts, "Overall, step 2 of 3 · 53%", and "Less than a minute left". The
+Sources panel row shows its own bar and %, the menu bar popover shows
+"Indexing 54% · less than a minute left", and the Dock icon shows a bar and
+"53%". Stop arrives with step 4.6.
 
 - Toolbar ring and popover, first-index screen, Sources panel bars, Dock
   progress, menu bar line (3.3).

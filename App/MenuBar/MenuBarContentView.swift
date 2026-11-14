@@ -56,6 +56,9 @@ struct MenuBarContentView: View {
                     .font(.callout)
                     .monospacedDigit()
             }
+            if model.isIndexing {
+                IndexingLine()
+            }
             HStack {
                 Button("Shuffle", systemImage: "shuffle") { model.shuffleOnThisDay() }
                     .disabled((model.onThisDay?.photos.count ?? 0) < 2)
@@ -112,5 +115,29 @@ private struct MenuBarPhotoView: View {
             guard !Task.isCancelled else { return }
             image = loaded
         }
+    }
+}
+
+/// "Indexing 42% · about 3 minutes left" while sources are being indexed.
+private struct IndexingLine: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini)
+            Text(text)
+                .monospacedDigit()
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+    }
+
+    private var text: String {
+        if model.overallIsIndeterminate { return "Indexing…" }
+        var line = "Indexing \(Int(((model.overallFraction ?? 0) * 100).rounded(.down)))%"
+        if let seconds = model.timeLeft {
+            line += " · \(ProgressEstimator.describe(seconds)) left"
+        }
+        return line
     }
 }

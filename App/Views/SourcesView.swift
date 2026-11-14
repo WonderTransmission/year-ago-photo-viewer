@@ -133,12 +133,27 @@ private struct SourceRow: View {
                 .foregroundStyle(.secondary)
                 .help("The folder can't be reached. Its index is kept until it returns.")
         } else if model.syncingSourceID == source.id {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(model.scanProgress.map(DisplayFormat.shortProgress) ?? "Scanning…")
-                    .monospacedDigit()
+            if let progress = model.scanProgress, !progress.isIndeterminate || progress.fraction > 0 {
+                HStack(spacing: 6) {
+                    ProgressView(value: progress.fraction)
+                        .frame(width: 90)
+                    Text("\(progress.percent)%")
+                        .monospacedDigit()
+                        .frame(width: 38, alignment: .trailing)
+                }
+                .foregroundStyle(.secondary)
+                .help(DisplayFormat.progress(progress))
+            } else {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(model.scanProgress.map(DisplayFormat.shortProgress) ?? "Starting…")
+                }
+                .foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
+        } else if model.waitingSourceIDs.contains(source.id) {
+            Label("Waiting", systemImage: "clock")
+                .foregroundStyle(.secondary)
+                .help("Indexes after the sources before it.")
         } else {
             let visible = model.sourceStats[source.id]?.visible ?? 0
             Text(visible == 1 ? "1 photo" : "\(visible.formatted()) photos")
