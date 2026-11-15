@@ -381,7 +381,12 @@ final class ViewerModel {
     private func addFileSources(_ urls: [URL], kind: SourceRecord.Kind) async -> [(id: Int64, url: URL)] {
         var added: [(id: Int64, url: URL)] = []
         for url in urls {
-            let name = kind == .libraryPackage ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+            var name = kind == .libraryPackage ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+            // The system library file is usually "Photos Library", the same
+            // name as the Photos Library source: tell the two apart.
+            if kind == .libraryPackage, sources.contains(where: { $0.name == name }) {
+                name += " (File)"
+            }
             do {
                 let bookmark = try access.bookmarkForPickedFolder(url)
                 let source = try await index.addFolderSource(
