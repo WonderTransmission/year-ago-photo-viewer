@@ -9,9 +9,10 @@ import Foundation
 public enum PhotosLibraryPackage {
     public static let pathExtension = "photoslibrary"
 
-    /// Folders, relative to the package, that can hold originals:
-    /// the library's own photos (macOS 10.15 and later), its Shared Library
-    /// photos, and the own photos of older libraries.
+    /// Folders, relative to the package, that can hold originals: the
+    /// library's own photos (macOS 10.15 and later), shared photos stored
+    /// with the library, and the own photos of older libraries. The shared
+    /// folder's exact role is uncertain; see the plan's section 6.3.
     public static let originalsFolders = ["originals", "scopes/collectionshare/originals", "Masters"]
 
     /// The originals folders that exist in `package`. Empty when `package`

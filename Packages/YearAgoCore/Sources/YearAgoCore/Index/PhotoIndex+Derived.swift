@@ -70,13 +70,16 @@ extension PhotoIndex {
     }
 
     /// Links rows that are the same photo, and returns each linked row's
-    /// group (its smallest ID). Three kinds of link:
+    /// group (its smallest ID). Four kinds of link:
     /// - identical content (same SHA-256)
     /// - the same file reached through nested folder sources
     /// - the same capture second and pixel size, between a Photos library
     ///   row and a file row: exports of library photos, or the same library
     ///   added as a package. Two Photos library rows are never linked this
     ///   way: burst shots share a second and a size.
+    /// - the same asset ID, between a Photos library row and a library
+    ///   file row: the system library added both ways. Original files are
+    ///   named after their asset's ID.
     private func duplicateGroups() throws -> [Int64: Int64] {
         var unionFind = UnionFind()
 
@@ -127,7 +130,38 @@ extension PhotoIndex {
             unionFind.union(sameCapture.int64(0), sameCapture.int64(1))
         }
 
+        try linkSameAssetIDs(&unionFind)
         return unionFind.groups()
+    }
+
+    /// Links each Photos library row ("<UUID>/L0/001") to the library file
+    /// rows whose original is named "<UUID>.<ext>".
+    private func linkSameAssetIDs(_ unionFind: inout UnionFind) throws {
+        let packageRows = try database.prepare("""
+            SELECT p.id, p.locator FROM photos p
+            JOIN sources s ON s.id = p.source_id AND s.kind = 'libraryPackage'
+            """)
+        try packageRows.bind([])
+        var byAssetID: [String: [Int64]] = [:]
+        while try packageRows.step() {
+            let name = packageRows.text(1).split(separator: "/").last.map(String.init) ?? ""
+            if let id = PhotosLibraryPackage.assetID(fromFileName: name) {
+                byAssetID[id, default: []].append(packageRows.int64(0))
+            }
+        }
+        guard !byAssetID.isEmpty else { return }
+
+        let libraryRows = try database.prepare("""
+            SELECT p.id, p.locator FROM photos p
+            JOIN sources s ON s.id = p.source_id AND s.kind = 'photos'
+            """)
+        try libraryRows.bind([])
+        while try libraryRows.step() {
+            let assetID = libraryRows.text(1).prefix(36).uppercased()
+            for fileRow in byAssetID[assetID] ?? [] {
+                unionFind.union(libraryRows.int64(0), fileRow)
+            }
+        }
     }
 
     /// Folder sources whose root sits inside another folder source's root.

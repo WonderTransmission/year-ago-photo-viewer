@@ -130,7 +130,9 @@ Built as planned, with these differences:
   library as a file is a fine way to use it, with no Photos permission.
 - **Duplicates hidden.** If both sources exist, matching photos show once.
   The capture-time match now links Photos Library rows to any file-based
-  row, not only folders.
+  row, not only folders. A later change also links them by asset ID: an
+  original named `<UUID>.<ext>` matches the asset `<UUID>/L0/001`. This
+  catches photos with no EXIF date, which the capture-time match misses.
 - **Watching.** The watcher covers only the originals folders. Photos writes
   to the rest of the package (its database, thumbnails) constantly.
 - **Debug.** `-DebugFolderPath` adds a `.photoslibrary` path as a library
@@ -140,7 +142,8 @@ Built as planned, with these differences:
    the package path and a bookmark, like a folder. Add a schema migration.
 2. **Core: scan roots.** Add a helper that lists the originals folders
    inside a package: `originals/`, `Masters/`, and
-   `scopes/collectionshare/originals/` (Shared Library), where they exist.
+   `scopes/collectionshare/originals/`, where they exist. See section 6.3
+   about that last folder.
    Never scan the package root; it also holds thumbnails and other derived
    copies (spike: 13,023 images found there, versus 64 originals).
 3. **Core: date sources.** Hide the File name date for this kind. The
@@ -246,9 +249,7 @@ photos.
 
 ## 6. Open questions
 
-- **Shared albums.** Shared-album photos live in
-  `scopes/cloudsharing/data/`, at reduced size. Should a package source
-  include them? Check first whether the system library source does.
+- **Shared photos.** See 6.3.
 - **Edits.** See 6.1.
 
 ### 6.1 Edits
@@ -308,7 +309,7 @@ counts only. Libraries tested:
 | 1. Open panel | Works. `allowedContentTypes = [UTType("com.apple.photos.library")]` selects the package. A read-only security-scoped bookmark is created. |
 | 2. TCC | No prompt, and no Photos permission needed, for either library in `~/Pictures`. This includes the system library. The user-selected bookmark is enough. External: all originals were read before any Photos prompt; no removable-volume prompt. |
 | 3. Database | `mode=ro` reads both libraries in the sandbox, including WAL data. `immutable=1` found 0 of 4 assets in TEST, whose data was all in the WAL. In External, both modes agreed (WAL already checkpointed). Nothing was written to `database/` in any run. |
-| 4. Layout | Own photos: `originals/<hex>/<UUID>.<ext>`. Shared Library: `scopes/collectionshare/originals/<hex>/`. Shared albums: `scopes/cloudsharing/data/<id>/`. Live Photo videos: `<UUID>_3.mov`, already ignored. The legacy library uses `Masters/`. |
+| 4. Layout | Own photos: `originals/<hex>/<UUID>.<ext>`. `scopes/collectionshare/originals/<hex>/`, probably shared content (6.3). Shared albums: `scopes/cloudsharing/data/<id>/`. Live Photo videos: `<UUID>_3.mov`, already ignored. The legacy library uses `Masters/`. |
 | 5. Identity | Every original's file name is its asset UUID (10,347 of 10,347 in System). PhotoKit found 5 of 5 System samples as `<UUID>/L0/001`, 5 of 5 External samples (correct: it is that Mac's system library), and 0 of 4 TEST samples. The check needs Photos permission. |
 | 6. Renders | After a revert, `resources/renders/` was empty. The database still had an adjustment timestamp and a leftover `ZUNMANAGEDADJUSTMENT` row. External: 521 assets edited, 517 render images. |
 | 7. Database cost | Drift already shows: `ZHASADJUSTMENTS`, used by older tools, is gone; `ZADJUSTMENTSSTATE` replaces it. External: the database lists 10,904 images; `originals/` holds 10,747 (98.6%). No trashed or hidden photos. Adjusted dates were not measured. |
@@ -317,14 +318,35 @@ counts only. Libraries tested:
 Consequences for the plan:
 
 - **Optimised libraries.** On an iCloud library with Optimize Mac Storage,
-  3.1 finds only the originals on disk: 64 of about 720 own photos here. The
-  Sources panel should say so, using the file count. 3.3 could count the
-  missing ones from the database.
+  3.1 finds only the originals on disk. Here that was 64 files, while the
+  database lists about 720 images outside shared albums. (PhotoKit counts
+  only 13 of those as the user's own; see 6.3.) The Sources panel says
+  so in its tooltip. 3.3 could count the missing ones from the database.
 - **3.3 deferred.** See 5.1. Revisit if photos show on the wrong day
   because their dates were fixed in Photos.
 - **Warning matters.** The motivating external library is a system library.
   Adding it as a package would duplicate the PhotoKit source, so 4.2 step 7
   is needed.
+
+### 6.3 Shared photos (future)
+
+The spike labelled `scopes/collectionshare/originals/` as the iCloud Shared
+Library. Testing on the system library (2026-11-14) cast doubt on that:
+
+- **Not in PhotoKit.** Its 51 originals aren't in PhotoKit's user library.
+  PhotoKit returned only the 13 photos in `originals/`.
+- **Different type.** Photos' database gives them saved-asset type 16. The
+  photos in `originals/` have type 3.
+
+So they're probably shared content from other people, like shared albums.
+The Photos Library source skips shared albums (9,215 images on that Mac).
+
+Decision for now: keep scanning the folder. A library file may therefore
+show more photos than the Photos Library source does.
+
+Future: showing shared photos (shared albums, and this folder) may become a
+feature, possibly optional, for both source kinds. Shared-album files live
+in `scopes/cloudsharing/data/`, at reduced size.
 
 The probe code is not kept in the repo. It was a throwaway DEBUG build that
 logged counts under subsystem `YearAgoPhotoViewer`, category `probe`.

@@ -234,6 +234,38 @@ private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
         let photos = try await index.loadTimeline(roots: [packageSource.id: package]).photos
         #expect(photos.count == 1)
     }
+
+    @Test func systemLibraryFileMatchesLibraryPhotosByAssetID() async throws {
+        let parent = try Fixtures.makeTemporaryDirectory()
+        defer { Fixtures.cleanUp(parent) }
+        let package = parent.appendingPathComponent("System.photoslibrary")
+        let id = UUID().uuidString
+        let original = package.appendingPathComponent("originals/A/\(id).jpeg")
+        try FileManager.default.createDirectory(at: original.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        // No EXIF date, so the capture-time match can't link them.
+        try Fixtures.writeImage(to: original, width: 40, height: 30)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: TimeInterval(local(2025, 11, 3, 9).seconds))],
+            ofItemAtPath: original.path)
+
+        let library = FakeLibrary([
+            asset("\(id)/L0/001", local(2025, 11, 3, 9), width: 40, height: 30),
+            asset("\(UUID().uuidString)/L0/001", local(2025, 11, 3, 9), width: 40, height: 30),
+        ])
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let photosSource = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .modified)
+        _ = try await index.syncLibrary(sourceID: photosSource.id, library: library)
+        let packageSource = try await index.addFolderSource(rootPath: FolderScanner.realPath(package.path),
+                                                            name: "System", bookmark: nil, dateSource: .modified,
+                                                            kind: .libraryPackage)
+        _ = try await index.sync(sourceID: packageSource.id, root: package)
+
+        // Three rows, two photos: the file and its asset show once.
+        let photos = try await index.loadTimeline(roots: [packageSource.id: package]).photos
+        #expect(photos.count == 2)
+        #expect(photos.filter { $0.relativePath.contains(id) }.count == 1)
+    }
 }
 
 /// Thread-safe collector for progress stages.
