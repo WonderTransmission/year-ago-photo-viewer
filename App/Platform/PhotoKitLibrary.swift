@@ -21,6 +21,10 @@ protocol AppPhotoLibrary: PhotoLibraryProviding {
     /// exactly what changed when Photos can say. Stop the returned
     /// observation to end it.
     func startObservingChanges(_ handler: @escaping @Sendable (LibraryChange) -> Void) async -> LibraryObservation?
+    /// How many of `localIdentifiers` are assets in this library. Used to
+    /// tell whether a library package is the system library. Call only
+    /// with access granted; never asks for it.
+    func countAssets(withLocalIdentifiers localIdentifiers: [String]) async -> Int
 }
 
 /// An active change observation. `stop()` runs off the main thread.
@@ -56,6 +60,12 @@ struct PhotoKitLibrary: AppPhotoLibrary {
         // which images were added, changed, or removed.
         observer.track(PHAsset.fetchAssets(with: Self.imageFetchOptions()))
         return observer
+    }
+
+    @concurrent
+    func countAssets(withLocalIdentifiers localIdentifiers: [String]) async -> Int {
+        guard await accessGranted(), !localIdentifiers.isEmpty else { return 0 }
+        return PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil).count
     }
 
     /// Opens System Settings at Privacy & Security › Photos.
@@ -312,6 +322,7 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
 
     @concurrent func accessGranted() async -> Bool { true }
     @concurrent func requestAccess() async -> Bool { true }
+    @concurrent func countAssets(withLocalIdentifiers localIdentifiers: [String]) async -> Int { 0 }
 
     @concurrent
     func startObservingChanges(_ handler: @escaping @Sendable (LibraryChange) -> Void) async -> LibraryObservation? {

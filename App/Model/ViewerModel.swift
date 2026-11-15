@@ -178,6 +178,9 @@ final class ViewerModel {
     private(set) var scanProgress: ScanProgress?
     /// A problem to show the user, e.g. a folder that could not be added.
     var errorMessage: String?
+    /// Something to tell the user that isn't an error, e.g. that a library
+    /// they added is also the Photos Library source.
+    var notice: Notice?
     // MARK: Indexing progress across a round of syncs
 
     /// Steps in the current round of syncs: each queued source, plus the
@@ -359,24 +362,64 @@ final class ViewerModel {
     /// Adds folders the user picked. A folder that is already a source is
     /// reconnected rather than added twice.
     func addFolders(_ urls: [URL]) {
+        Task { await addFileSources(urls, kind: .folder) }
+    }
+
+    /// Adds Photos library packages (`.photoslibrary`) the user picked, read
+    /// as files. Warns when one is the system library and the Photos Library
+    /// source exists too.
+    func addLibraryPackages(_ urls: [URL]) {
         Task {
-            var added: [Int64] = []
-            for url in urls {
-                do {
-                    let bookmark = try access.bookmarkForPickedFolder(url)
-                    let source = try await index.addFolderSource(
-                        rootPath: FolderScanner.realPath(url.path), name: url.lastPathComponent,
-                        bookmark: bookmark, dateSource: defaultDateSource)
-                    access.track(url, for: source.id)
-                    connect(source.id, to: url)
-                    try await index.setOnline(true, forSource: source.id)
-                    added.append(source.id)
-                } catch {
-                    errorMessage = "Couldn't add “\(url.lastPathComponent)”: \(error.localizedDescription)"
-                }
+            let added = await addFileSources(urls, kind: .libraryPackage)
+            await warnIfSystemLibrary(added)
+        }
+    }
+
+    /// Adds file-based sources, then syncs them. Returns the added sources
+    /// with their URLs.
+    @discardableResult
+    private func addFileSources(_ urls: [URL], kind: SourceRecord.Kind) async -> [(id: Int64, url: URL)] {
+        var added: [(id: Int64, url: URL)] = []
+        for url in urls {
+            let name = kind == .libraryPackage ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+            do {
+                let bookmark = try access.bookmarkForPickedFolder(url)
+                let source = try await index.addFolderSource(
+                    rootPath: FolderScanner.realPath(url.path), name: name,
+                    bookmark: bookmark, dateSource: defaultDateSource, kind: kind)
+                access.track(url, for: source.id)
+                connect(source.id, to: url, kind: kind)
+                try await index.setOnline(true, forSource: source.id)
+                added.append((source.id, url))
+            } catch {
+                errorMessage = "Couldn't add “\(name)”: \(error.localizedDescription)"
             }
-            await refresh(keepPosition: true)
-            enqueueSync(added)
+        }
+        await refresh(keepPosition: true)
+        enqueueSync(added.map(\.id))
+        return added
+    }
+
+    /// Photos names originals after their asset IDs, so a package whose
+    /// originals PhotoKit knows is the system library. Checked only when the
+    /// Photos Library source exists (with access): otherwise adding the
+    /// system library as a package is a fine way to use it.
+    private func warnIfSystemLibrary(_ added: [(id: Int64, url: URL)]) async {
+        guard hasPhotosLibrary, !added.isEmpty, await photoLibrary.accessGranted() else { return }
+        let library = photoLibrary
+        for (_, url) in added {
+            let sample = await Task.detached { PhotosLibraryPackage.sampleAssetIDs(in: url) }.value
+            guard !sample.isEmpty else { continue }
+            let found = await library.countAssets(
+                withLocalIdentifiers: sample.map(PhotosLibraryPackage.localIdentifier(forAssetID:)))
+            if found > 0 {
+                let name = url.deletingPathExtension().lastPathComponent
+                notice = Notice(
+                    title: "“\(name)” Is Your Photos Library",
+                    message: "The Photos Library source already shows these photos. The app hides the "
+                        + "duplicates, but indexes them twice. To avoid that, remove one of the two sources.")
+                return
+            }
         }
     }
 
@@ -502,9 +545,11 @@ final class ViewerModel {
             _ = try? await index.addPhotosLibrarySource(name: "Fake Photos Library", dateSource: defaultDateSource)
         }
         for debugFolder in debugFolders {
-            _ = try? await index.addFolderSource(rootPath: FolderScanner.realPath(debugFolder.path),
-                                                 name: debugFolder.lastPathComponent, bookmark: nil,
-                                                 dateSource: defaultDateSource)
+            let isPackage = debugFolder.pathExtension == PhotosLibraryPackage.pathExtension
+            _ = try? await index.addFolderSource(
+                rootPath: FolderScanner.realPath(debugFolder.path),
+                name: isPackage ? debugFolder.deletingPathExtension().lastPathComponent : debugFolder.lastPathComponent,
+                bookmark: nil, dateSource: defaultDateSource, kind: isPackage ? .libraryPackage : .folder)
         }
         await refresh(keepPosition: false)
         for source in sources {
@@ -559,16 +604,16 @@ final class ViewerModel {
         }
         let reachable = url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
         if let url, reachable {
-            connect(source.id, to: url)
+            connect(source.id, to: url, kind: source.kind)
         } else {
             disconnect(source.id)
         }
         try? await index.setOnline(reachable, forSource: source.id)
     }
 
-    private func connect(_ id: Int64, to url: URL) {
+    private func connect(_ id: Int64, to url: URL, kind: SourceRecord.Kind) {
         roots[id] = url
-        watchers[id] = makeWatcher(id, url)
+        watchers[id] = makeWatcher(id, url, kind: kind)
     }
 
     private func disconnect(_ id: Int64) {
@@ -576,8 +621,16 @@ final class ViewerModel {
         watchers[id] = nil
     }
 
-    private func makeWatcher(_ id: Int64, _ url: URL) -> FolderWatcher {
-        FolderWatcher(url: url) { [weak self] in
+    /// Watches a folder, or a package's originals folders. Photos writes to
+    /// the rest of a package (its database, thumbnails) all the time; those
+    /// writes don't change which originals exist.
+    private func makeWatcher(_ id: Int64, _ url: URL, kind: SourceRecord.Kind) -> FolderWatcher {
+        var urls = [url]
+        if kind == .libraryPackage {
+            let folders = PhotosLibraryPackage.existingOriginalsFolders(in: url).map { url.appending(path: $0) }
+            if !folders.isEmpty { urls = folders }
+        }
+        return FolderWatcher(urls: urls) { [weak self] in
             Task { @MainActor in self?.enqueueSync([id]) }
         }
     }
@@ -763,7 +816,7 @@ final class ViewerModel {
             }
             guard let source = source(id: id), source.isEnabled else { continue }
             let root = roots[id]
-            if source.kind == .folder, root == nil { continue }
+            if source.kind.isFileBased, root == nil { continue }
             if source.kind == .photos, !(await photoLibrary.accessGranted()) {
                 photosAccessGranted = false
                 try? await index.setOnline(false, forSource: id)
@@ -1061,8 +1114,8 @@ final class ViewerModel {
 
     private static func debugFolderArguments() -> [URL] {
         #if DEBUG
-        // e.g. -DebugFolderPath <path>[:<path>…]. Adds those folders as
-        // sources in a separate temp index. The sandbox only allows paths
+        // e.g. -DebugFolderPath <path>[:<path>…]. Adds those folders (or
+        // .photoslibrary packages) as sources in a separate temp index. The sandbox only allows paths
         // inside the app's container, so this is for development only.
         if let paths = UserDefaults.standard.string(forKey: "DebugFolderPath") {
             return paths.split(separator: ":").map { URL(fileURLWithPath: String($0), isDirectory: true) }
@@ -1074,6 +1127,12 @@ final class ViewerModel {
 
 #if DEBUG
 /// Parses "yyyy-MM-dd" for the DebugToday launch argument.
+/// A message for the user that isn't an error.
+struct Notice: Equatable {
+    var title: String
+    var message: String
+}
+
 private enum DebugDayParser {
     static func day(_ text: String) -> LocalDateTime? {
         let parts = text.split(separator: "-").compactMap { Int($0) }

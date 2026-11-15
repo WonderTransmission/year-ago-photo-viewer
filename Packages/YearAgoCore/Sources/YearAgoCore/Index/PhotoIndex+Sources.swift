@@ -2,17 +2,35 @@ import Foundation
 
 /// A photo source as stored in the index.
 public struct SourceRecord: Identifiable, Equatable, Sendable {
-    public enum Kind: String, Sendable {
+    public enum Kind: String, Sendable, CaseIterable {
         case folder
+        /// The system Photos library, through PhotoKit.
         case photos
+        /// A `.photoslibrary` package, read as files. See `PhotosLibraryPackage`.
+        case libraryPackage
+
+        /// True for sources read as files: folders and library packages.
+        public var isFileBased: Bool { self != .photos }
+
+        /// Date settings that make sense for this kind. Library packages
+        /// store originals under UUID names, so the File name date is out.
+        public var dateSources: [DateSourceKind] {
+            self == .libraryPackage ? DateSourceKind.allCases.filter { $0 != .fileName } : DateSourceKind.allCases
+        }
+
+        /// `preferred`, or EXIF when this kind can't use it.
+        public func dateSource(preferring preferred: DateSourceKind) -> DateSourceKind {
+            dateSources.contains(preferred) ? preferred : .exif
+        }
     }
 
     public var id: Int64
     public var kind: Kind
     public var name: String
-    /// Folders only: the resolved root path.
+    /// File-based sources only: the resolved root path (the package, for a
+    /// library package).
     public var rootPath: String?
-    /// Folders only: a security-scoped bookmark to the root.
+    /// File-based sources only: a security-scoped bookmark to the root.
     public var bookmark: Data?
     public var dateSource: DateSourceKind
     public var isEnabled: Bool
@@ -67,11 +85,15 @@ extension PhotoIndex {
         return result
     }
 
-    /// Adds a folder source at the end of the list. If `rootPath` is already
-    /// a source, returns it instead, updating its bookmark when given one.
+    /// Adds a file-based source (a folder, or a library package) at the end
+    /// of the list. If `rootPath` is already a source of that kind, returns
+    /// it instead, updating its bookmark when given one. A date setting the
+    /// kind can't use becomes EXIF.
     public func addFolderSource(rootPath: String, name: String, bookmark: Data?,
-                                dateSource: DateSourceKind) throws -> SourceRecord {
-        if let existing = try sources().first(where: { $0.kind == .folder && $0.rootPath == rootPath }) {
+                                dateSource: DateSourceKind,
+                                kind: SourceRecord.Kind = .folder) throws -> SourceRecord {
+        precondition(kind.isFileBased, "The Photos library has its own add method")
+        if let existing = try sources().first(where: { $0.kind == kind && $0.rootPath == rootPath }) {
             guard let bookmark else { return existing }
             try setBookmark(bookmark, forSource: existing.id)
             var updated = existing
@@ -80,9 +102,9 @@ extension PhotoIndex {
         }
         try database.prepare("""
             INSERT INTO sources (kind, name, root_path, bookmark, date_source, sort_order)
-            VALUES ('folder', ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sources))
-            """).run([.text(name), .text(rootPath), bookmark.map(SQLValue.blob) ?? .null,
-                      .text(dateSource.rawValue)])
+            VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sources))
+            """).run([.text(kind.rawValue), .text(name), .text(rootPath), bookmark.map(SQLValue.blob) ?? .null,
+                      .text(kind.dateSource(preferring: dateSource).rawValue)])
         let id = database.lastInsertRowID
         guard let added = try sources().first(where: { $0.id == id }) else {
             throw DatabaseError(code: 0, message: "Source \(id) vanished after insert")
@@ -133,15 +155,23 @@ extension PhotoIndex {
     }
 
     /// Changes which date a source uses. Takes effect without a rescan.
+    /// A date setting the source's kind can't use becomes EXIF.
     public func setDateSource(_ dateSource: DateSourceKind, forSource id: Int64) throws {
+        let kind = try sources().first { $0.id == id }?.kind ?? .folder
         try database.prepare("UPDATE sources SET date_source = ? WHERE id = ?")
-            .run([.text(dateSource.rawValue), .int(id)])
+            .run([.text(kind.dateSource(preferring: dateSource).rawValue), .int(id)])
         try refreshDerived()
     }
 
-    /// Gives every source the same date setting.
+    /// Gives every source the same date setting, where its kind can use it.
+    /// Other sources keep theirs.
     public func setDateSourceForAll(_ dateSource: DateSourceKind) throws {
-        try database.prepare("UPDATE sources SET date_source = ?").run([.text(dateSource.rawValue)])
+        let update = try database.prepare("UPDATE sources SET date_source = ? WHERE kind = ?")
+        try database.transaction {
+            for kind in SourceRecord.Kind.allCases where kind.dateSources.contains(dateSource) {
+                try update.run([.text(dateSource.rawValue), .text(kind.rawValue)])
+            }
+        }
         try refreshDerived()
     }
 

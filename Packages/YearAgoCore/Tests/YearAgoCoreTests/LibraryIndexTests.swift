@@ -210,6 +210,30 @@ private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
         try await index.setEnabled(false, forSource: photosSource.id)
         #expect(try await index.loadTimeline(roots: roots).photos.map(\.fileName) == ["IMG_0001.jpg", "other.jpg"])
     }
+
+    @Test func systemLibraryAddedAlsoAsPackageShowsOnce() async throws {
+        let parent = try Fixtures.makeTemporaryDirectory()
+        defer { Fixtures.cleanUp(parent) }
+        let package = parent.appendingPathComponent("System.photoslibrary")
+        let id = UUID().uuidString
+        let original = package.appendingPathComponent("originals/A/\(id).jpeg")
+        try FileManager.default.createDirectory(at: original.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Fixtures.writeImage(to: original, width: 40, height: 30,
+                                exif: [kCGImagePropertyExifDateTimeOriginal: "2025:11:03 09:00:00"])
+
+        let library = FakeLibrary([asset("\(id)/L0/001", local(2025, 11, 3, 9), width: 40, height: 30)])
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let photosSource = try await index.addPhotosLibrarySource(name: "Photos", dateSource: .exif)
+        _ = try await index.syncLibrary(sourceID: photosSource.id, library: library)
+        let packageSource = try await index.addFolderSource(rootPath: FolderScanner.realPath(package.path),
+                                                            name: "System", bookmark: nil, dateSource: .exif,
+                                                            kind: .libraryPackage)
+        _ = try await index.sync(sourceID: packageSource.id, root: package)
+
+        let photos = try await index.loadTimeline(roots: [packageSource.id: package]).photos
+        #expect(photos.count == 1)
+    }
 }
 
 /// Thread-safe collector for progress stages.

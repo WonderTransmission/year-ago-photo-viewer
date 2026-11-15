@@ -74,8 +74,9 @@ extension PhotoIndex {
     /// - identical content (same SHA-256)
     /// - the same file reached through nested folder sources
     /// - the same capture second and pixel size, between a Photos library
-    ///   row and a folder row (exports of library photos). Two library rows
-    ///   are never linked this way: burst shots share a second and a size.
+    ///   row and a file row: exports of library photos, or the same library
+    ///   added as a package. Two Photos library rows are never linked this
+    ///   way: burst shots share a second and a size.
     private func duplicateGroups() throws -> [Int64: Int64] {
         var unionFind = UnionFind()
 
@@ -118,7 +119,7 @@ extension PhotoIndex {
             JOIN photos b ON b.date_exif = a.date_exif AND b.id <> a.id
              AND ((b.pixel_w = a.pixel_w AND b.pixel_h = a.pixel_h)
                OR (b.pixel_w = a.pixel_h AND b.pixel_h = a.pixel_w))
-            JOIN sources sb ON sb.id = b.source_id AND sb.kind = 'folder'
+            JOIN sources sb ON sb.id = b.source_id AND sb.kind <> 'photos'
             WHERE a.date_exif IS NOT NULL AND a.pixel_w IS NOT NULL
             """)
         try sameCapture.bind([])

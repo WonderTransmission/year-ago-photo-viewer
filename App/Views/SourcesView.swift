@@ -1,5 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import YearAgoCore
+
+extension UTType {
+    /// A Photos library package (`.photoslibrary`).
+    static let photosLibrary = UTType("com.apple.photos.library") ?? .package
+}
 
 /// The Sources panel: every photo source, with its on/off switch, name,
 /// date setting, and status. See proposal section 5.1.
@@ -8,6 +14,7 @@ struct SourcesView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int64?
     @State private var isAddingFolder = false
+    @State private var isAddingLibraryFile = false
     @State private var pendingRemoval: SourceRecord?
 
     var body: some View {
@@ -39,6 +46,8 @@ struct SourcesView: View {
                     .disabled(model.hasPhotosLibrary)
                     .help(model.hasPhotosLibrary ? "The Photos library is already a source"
                                                  : "Show photos from your Mac's Photos library")
+                Button("Add Photos Library File…", systemImage: "photo.stack") { isAddingLibraryFile = true }
+                    .help("Show photos from any Photos library file, such as one on another drive")
                 Button("Remove", systemImage: "minus") {
                     pendingRemoval = selection.flatMap(model.source(id:))
                 }
@@ -48,8 +57,15 @@ struct SourcesView: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding()
+            // A second file importer must sit on a different view than the first.
+            .fileImporter(isPresented: $isAddingLibraryFile, allowedContentTypes: [.photosLibrary],
+                          allowsMultipleSelection: true) { result in
+                if case .success(let urls) = result {
+                    model.addLibraryPackages(urls)
+                }
+            }
         }
-        .frame(minWidth: 800, minHeight: 360)
+        .frame(minWidth: 960, minHeight: 360)
         .fileImporter(isPresented: $isAddingFolder, allowedContentTypes: [.folder],
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
@@ -67,6 +83,12 @@ struct SourcesView: View {
             }
         } message: { _ in
             Text("Your photos stay where they are. Only the app's index for this source is deleted.")
+        }
+        .alert(model.notice?.title ?? "",
+               isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(model.notice?.message ?? "")
         }
     }
 }
@@ -87,7 +109,7 @@ private struct SourceRow: View {
                 .labelsHidden()
                 .toggleStyle(.checkbox)
 
-            Image(systemName: source.kind == .photos ? "photo.on.rectangle" : "folder")
+            Image(systemName: source.kind.symbolName)
                 .foregroundStyle(.secondary)
 
             TextField("Name", text: $draftName)
@@ -102,7 +124,7 @@ private struct SourceRow: View {
             Picker("Date", selection: Binding(
                 get: { source.dateSource },
                 set: { model.setDateSource($0, forSource: source.id) })) {
-                ForEach(DateSourceKind.allCases, id: \.self) { kind in
+                ForEach(source.kind.dateSources, id: \.self) { kind in
                     Text(kind.displayName).tag(kind)
                 }
             }
@@ -148,7 +170,9 @@ private struct SourceRow: View {
         } else if !source.isOnline {
             Label("Offline", systemImage: "externaldrive.badge.xmark")
                 .foregroundStyle(.secondary)
-                .help("The folder can't be reached. Its index is kept until it returns.")
+                .help(source.kind == .libraryPackage
+                      ? "The library file can't be reached, or has no photos folder. Its index is kept until it returns."
+                      : "The folder can't be reached. Its index is kept until it returns.")
         } else if source.isStopped {
             HStack(spacing: 6) {
                 Text(stoppedText)
@@ -187,6 +211,19 @@ private struct SourceRow: View {
             Text(visible == 1 ? "1 photo" : "\(visible.formatted()) photos")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+                .help(source.kind == .libraryPackage
+                      ? "Only originals stored in the library file show. With Optimize Mac Storage on, many are in iCloud only."
+                      : "")
+        }
+    }
+}
+
+private extension SourceRecord.Kind {
+    var symbolName: String {
+        switch self {
+        case .folder: "folder"
+        case .photos: "photo.on.rectangle"
+        case .libraryPackage: "photo.stack"
         }
     }
 }

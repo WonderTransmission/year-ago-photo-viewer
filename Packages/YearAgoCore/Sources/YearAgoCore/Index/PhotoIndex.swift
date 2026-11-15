@@ -12,8 +12,8 @@ public struct SyncResult: Equatable, Sendable {
 
 public enum PhotoIndexError: Error {
     case syncAlreadyRunning
-    /// The source's folder is missing, e.g. its drive is unplugged. Nothing
-    /// was deleted.
+    /// The source's folder is missing, e.g. its drive is unplugged, or a
+    /// library package has no originals folder. Nothing was deleted.
     case rootUnavailable
 }
 
@@ -91,11 +91,17 @@ public actor PhotoIndex {
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory),
               isDirectory.boolValue
         else { throw PhotoIndexError.rootUnavailable }
+        let isPackage = try sources().first { $0.id == sourceID }?.kind == .libraryPackage
+        // A package without originals folders is unreadable or not a library:
+        // never treat that as "every photo was deleted" either.
+        if isPackage, PhotosLibraryPackage.existingOriginalsFolders(in: root).isEmpty {
+            throw PhotoIndexError.rootUnavailable
+        }
         isSyncing = true
         defer { isSyncing = false }
         do {
-            return try await syncFolder(sourceID: sourceID, root: root, onProgress: onProgress,
-                                        onPhotosAvailable: onPhotosAvailable)
+            return try await syncFolder(sourceID: sourceID, root: root, isPackage: isPackage,
+                                        onProgress: onProgress, onPhotosAvailable: onPhotosAvailable)
         } catch is CancellationError {
             // Stopped: keep and show what was read; delete nothing.
             try updatePairs(sourceID: sourceID)
@@ -107,6 +113,7 @@ public actor PhotoIndex {
     private func syncFolder(
         sourceID: Int64,
         root: URL,
+        isPackage: Bool,
         onProgress: @escaping @Sendable (ScanProgress) -> Void,
         onPhotosAvailable: @escaping @Sendable () -> Void
     ) async throws -> SyncResult {
@@ -114,7 +121,8 @@ public actor PhotoIndex {
         let existing = try existingFiles(sourceID: sourceID)
         // While walking, the last index's file count is the estimate.
         progress.finding(0, estimate: existing.count)
-        let files = await Self.scanFolder(root, estimate: existing.count, progress: progress)
+        let files = await Self.scanFolder(root, isPackage: isPackage, estimate: existing.count,
+                                          progress: progress)
         // A stopped walk is incomplete: never treat unseen files as deleted.
         try Task.checkCancellation()
         try setKnownTotal(files.count, forSource: sourceID)
@@ -205,13 +213,14 @@ public actor PhotoIndex {
         return total
     }
 
-    /// Walks the folder off the actor.
+    /// Walks the folder, or a package's originals folders, off the actor.
     @concurrent
-    private static func scanFolder(_ root: URL, estimate: Int,
+    private static func scanFolder(_ root: URL, isPackage: Bool, estimate: Int,
                                    progress: ProgressReporter) async -> [ScannedFile] {
-        FolderScanner.scan(root, isCancelled: { Task.isCancelled }) { found in
-            progress.finding(found, estimate: estimate)
-        }
+        let onProgress: (Int) -> Void = { found in progress.finding(found, estimate: estimate) }
+        return isPackage
+            ? PhotosLibraryPackage.scan(root, isCancelled: { Task.isCancelled }, onProgress: onProgress)
+            : FolderScanner.scan(root, isCancelled: { Task.isCancelled }, onProgress: onProgress)
     }
 
     private func readAndStore(_ files: [ScannedFile], sourceID: Int64,
@@ -257,7 +266,7 @@ public actor PhotoIndex {
     // MARK: - Queries
 
     /// Every visible photo from every source, in date order. Photos from
-    /// folder sources missing from `roots` are left out. Photos library
+    /// file-based sources missing from `roots` are left out. Photos library
     /// items need no root.
     /// - Parameter roots: each folder source's root URL, by source ID.
     public func loadTimeline(roots: [Int64: URL]) throws -> PhotoTimeline {

@@ -62,6 +62,14 @@ struct ContentView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        // While the Sources panel is open, it shows notices itself.
+        .alert(model.notice?.title ?? "",
+               isPresented: Binding(get: { model.notice != nil && !model.isShowingSources },
+                                    set: { if !$0 { model.notice = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(model.notice?.message ?? "")
+        }
     }
 }
 

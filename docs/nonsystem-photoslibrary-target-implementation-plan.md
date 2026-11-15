@@ -1,6 +1,6 @@
 # Plan: Other Photos Libraries as Sources
 
-Status: step 4.1 (spike) done (section 6.2); step 4.2 to do. Option 3.1 is
+Status: steps 4.1 (spike) and 4.2 done; 4.4 (docs) to do. Option 3.1 is
 chosen. Option 3.3 is deferred (section 5.2).
 Trigger: users keep more than one `.photoslibrary`, for example an archive
 library on an external drive. Only the system library can be a source today.
@@ -116,9 +116,25 @@ Answer the unknowns before writing product code. Use a throwaway branch.
 Record the results in section 6. Use counts and paths relative to the
 package only, so they contain no personal data.
 
-### 4.2 Library package source, files only (to do)
+### 4.2 Library package source, files only (done)
 
 Ship option 3.1 as a new source kind.
+
+Built as planned, with these differences:
+
+- **No migration.** `sources.kind` is free text, so the new kind needed no
+  schema change. An older app version would read the package as a plain
+  folder.
+- **Warning only with both sources.** The system library check runs only
+  when the Photos Library source exists. Without it, adding the system
+  library as a file is a fine way to use it, with no Photos permission.
+- **Duplicates hidden.** If both sources exist, matching photos show once.
+  The capture-time match now links Photos Library rows to any file-based
+  row, not only folders.
+- **Watching.** The watcher covers only the originals folders. Photos writes
+  to the rest of the package (its database, thumbnails) constantly.
+- **Debug.** `-DebugFolderPath` adds a `.photoslibrary` path as a library
+  source.
 
 1. **Core: source kind.** Add `SourceRecord.Kind.libraryPackage`. It stores
    the package path and a bookmark, like a folder. Add a schema migration.

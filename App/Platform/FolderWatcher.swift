@@ -1,7 +1,8 @@
 import CoreServices
 import Foundation
 
-/// Calls a handler when anything changes under a folder, using FSEvents.
+/// Calls a handler when anything changes under one or more folders, using
+/// FSEvents.
 ///
 /// FSEvents coalesces changes over `latency` seconds, which debounces bursts
 /// such as a large copy. The handler runs on a private queue.
@@ -10,7 +11,11 @@ final class FolderWatcher {
     private let queue = DispatchQueue(label: "YearAgoPhotoViewer.FolderWatcher")
     private var stream: FSEventStreamRef?
 
-    init(url: URL, latency: TimeInterval = 2, handler: @escaping @Sendable () -> Void) {
+    convenience init(url: URL, latency: TimeInterval = 2, handler: @escaping @Sendable () -> Void) {
+        self.init(urls: [url], latency: latency, handler: handler)
+    }
+
+    init(urls: [URL], latency: TimeInterval = 2, handler: @escaping @Sendable () -> Void) {
         self.handler = handler
 
         var context = FSEventStreamContext(
@@ -21,7 +26,7 @@ final class FolderWatcher {
             Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue().handler()
         }
         guard let stream = FSEventStreamCreate(
-            nil, callback, &context, [url.path] as CFArray,
+            nil, callback, &context, urls.map(\.path) as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagWatchRoot))
         else { return }
