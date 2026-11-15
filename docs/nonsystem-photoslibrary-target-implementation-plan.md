@@ -1,7 +1,8 @@
 # Plan: Other Photos Libraries as Sources
 
-Status: proposed; step 4.1 (spike) to do. Option 3.1 is chosen. Whether to
-add 3.3 is decided after the spike (section 5).
+Status: step 4.1 (spike) done on one Mac, except external drives and a large
+local library (section 6.2). Option 3.1 is chosen. Whether to add 3.3 is
+still open (section 5.2).
 Trigger: users keep more than one `.photoslibrary`, for example an archive
 library on an external drive. Only the system library can be a source today.
 
@@ -57,9 +58,9 @@ Implement it as a second `PhotoLibraryProviding`, keyed by `ZASSET.ZUUID`.
   filter trashed and hidden assets and find edited renders.
 - **Fragility.** The schema is private and changes with most macOS releases.
   It needs per-version handling.
-- **Locking.** Photos keeps the database in WAL mode. A read-only bookmark
-  can't create the `-shm` file. The app must open with `immutable=1` or read
-  a temporary copy. Both can return slightly stale data.
+- **Locking.** Photos keeps the database in WAL mode. Open it with
+  `mode=ro`, which reads the WAL and writes nothing (spike step 3). Never
+  use `immutable=1`: it ignores the WAL, and can miss every asset.
 - **Changes.** There are no change notifications. The app must watch
   `database/` and resync.
 
@@ -83,7 +84,7 @@ decides whether it is worth building.
 
 ## 4. Work plan
 
-### 4.1 Spike: access and layout (to do)
+### 4.1 Spike: access and layout (mostly done; see 6.2)
 
 Answer the unknowns before writing product code. Use a throwaway branch.
 
@@ -122,8 +123,11 @@ Ship option 3.1 as a new source kind.
 
 1. **Core: source kind.** Add `SourceRecord.Kind.libraryPackage`. It stores
    the package path and a bookmark, like a folder. Add a schema migration.
-2. **Core: scan root.** Add a helper that finds the originals folder inside
-   a package (`originals/`, else `Masters/`). Return nil when neither exists.
+2. **Core: scan roots.** Add a helper that lists the originals folders
+   inside a package: `originals/`, `Masters/`, and
+   `scopes/collectionshare/originals/` (Shared Library), where they exist.
+   Never scan the package root; it also holds thumbnails and other derived
+   copies (spike: 13,023 images found there, versus 64 originals).
 3. **Core: date sources.** Hide the File name date for this kind. The
    default becomes EXIF.
 4. **App: adding.** Add an "Add Photos Library File…" button to
@@ -201,10 +205,11 @@ photos.
 
 ## 6. Open questions
 
-- **TCC.** Does macOS ask for Photos access for any `.photoslibrary`, or
-  only for the system library? (4.1 step 2)
-- **Shared Library.** Do iCloud Shared Library assets live outside
-  `originals/`? (4.1 step 4)
+- **TCC on external drives.** Libraries in `~/Pictures` need no Photos
+  permission (6.2). A library on an external drive is still untested.
+- **Shared albums.** Shared-album photos live in
+  `scopes/cloudsharing/data/`, at reduced size. Should a package source
+  include them? Check first whether the system library source does.
 - **Edits.** See 6.1.
 
 ### 6.1 Edits
@@ -241,3 +246,41 @@ doesn't change. Only the picture shown does.
 
 Suggestion: start with 1. Move to 2 if the spike shows renders are removed
 on revert. Otherwise use 3, if 3.3 is built.
+
+Spike result: after a revert, no render remained (6.2, step 6). So choice 2
+looks safe. Before building it, confirm a render exists while a photo is
+edited.
+
+### 6.2 Spike results (2026-11-14)
+
+One Mac, macOS 27.2.1, library schema 5001. The probe was a sandboxed,
+ad-hoc signed debug build. It logged counts only. Libraries tested:
+
+- **System.** The system library, about 10,000 assets. Optimize Mac Storage
+  is on, so few originals are on disk.
+- **TEST.** A new library in `~/Pictures`, with 4 photos. One was edited,
+  then reverted.
+- **Legacy.** An old, empty library with a `Masters/` folder only (shell
+  check only).
+
+| Step | Result |
+|---|---|
+| 1. Open panel | Works. `allowedContentTypes = [UTType("com.apple.photos.library")]` selects the package. A read-only security-scoped bookmark is created. |
+| 2. TCC | No prompt, and no Photos permission needed, for either library in `~/Pictures`. This includes the system library. The user-selected bookmark is enough. External drive: not tested. |
+| 3. Database | `mode=ro` reads both libraries in the sandbox, including WAL data. `immutable=1` found 0 of 4 assets in TEST, whose data was all in the WAL. Nothing was written to `database/` in any run. |
+| 4. Layout | Own photos: `originals/<hex>/<UUID>.<ext>`. Shared Library: `scopes/collectionshare/originals/<hex>/`. Shared albums: `scopes/cloudsharing/data/<id>/`. Live Photo videos: `<UUID>_3.mov`, already ignored. The legacy library uses `Masters/`. |
+| 5. Identity | Every original's file name is its asset UUID (10,347 of 10,347 in System). PhotoKit found 5 of 5 System samples as `<UUID>/L0/001`, and 0 of 4 TEST samples. The check needs Photos permission. |
+| 6. Renders | After a revert, `resources/renders/` was empty. The database still had an adjustment timestamp and a leftover `ZUNMANAGEDADJUSTMENT` row. A render while edited: not checked. |
+| 7. Database cost | One schema seen (5001). Drift already shows: `ZHASADJUSTMENTS`, used by older tools, is gone; `ZADJUSTMENTSSTATE` replaces it. Neither library had trashed, hidden, or edited photos, so there's no measure yet of what 3.3 adds. |
+
+Consequences for the plan:
+
+- **Optimised libraries.** On an iCloud library with Optimize Mac Storage,
+  3.1 finds only the originals on disk: 64 of about 720 own photos here. The
+  Sources panel should say so, using the file count. 3.3 could count the
+  missing ones from the database.
+- **3.3 decision.** It needs a large library stored fully on disk, such as
+  the external-drive library. Run the probe there before deciding.
+
+The probe code is not kept in the repo. It was a throwaway DEBUG build that
+logged counts under subsystem `YearAgoPhotoViewer`, category `probe`.
