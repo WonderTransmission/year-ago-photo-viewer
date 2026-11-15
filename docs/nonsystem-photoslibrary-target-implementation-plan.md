@@ -1,8 +1,7 @@
 # Plan: Other Photos Libraries as Sources
 
-Status: step 4.1 (spike) done on one Mac, except external drives and a large
-local library (section 6.2). Option 3.1 is chosen. Whether to add 3.3 is
-still open (section 5.2).
+Status: step 4.1 (spike) done (section 6.2); step 4.2 to do. Option 3.1 is
+chosen. Option 3.3 is deferred (section 5.2).
 Trigger: users keep more than one `.photoslibrary`, for example an archive
 library on an external drive. Only the system library can be a source today.
 
@@ -64,14 +63,14 @@ Implement it as a second `PhotoLibraryProviding`, keyed by `ZASSET.ZUUID`.
 - **Changes.** There are no change notifications. The app must watch
   `database/` and resync.
 
-### 3.3 Hybrid (undecided)
+### 3.3 Hybrid (deferred)
 
 Use 3.1 as the base. When the database schema is recognised, layer its
 metadata on top. When parsing fails, fall back to plain scanning.
 
 This has the safest failure mode of the database options. A macOS update
-can only lose the extra metadata, never the source. Section 5 lists what
-decides whether it is worth building.
+can only lose the extra metadata, never the source. The spike found it adds
+little for now, so it is deferred (section 5.2).
 
 ### 3.4 Ruled out
 
@@ -84,7 +83,7 @@ decides whether it is worth building.
 
 ## 4. Work plan
 
-### 4.1 Spike: access and layout (mostly done; see 6.2)
+### 4.1 Spike: access and layout (done; results in 6.2)
 
 Answer the unknowns before writing product code. Use a throwaway branch.
 
@@ -147,9 +146,10 @@ Ship option 3.1 as a new source kind.
    layouts. Use generated images only, never real photos. Cover scanning,
    the missing-originals case, and the migration.
 
-### 4.3 Database metadata overlay (only if chosen)
+### 4.3 Database metadata overlay (deferred)
 
-Add option 3.2 on top of 4.2. Build this only if section 5 decides for it.
+Add option 3.2 on top of 4.2. Build this only if section 5.2's conditions
+are met later.
 
 1. **Core: reader.** Add a `PhotosDatabaseReader` in the core package. It
    maps the file path of each original to its metadata:
@@ -189,10 +189,13 @@ Add option 3.2 on top of 4.2. Build this only if section 5 decides for it.
   library, warn when it is added (4.2 step 7).
 - **New kind, not a folder.** A separate kind lets the app pick the scan
   root and hide the File name date. A plain folder source can't.
+- **Defer 3.3.** On the large on-disk library, files alone found 98.6% of
+  images. Nothing was trashed or hidden. Edits can be found by file name
+  (6.1). So the database reader isn't worth its fragility yet.
 
-### 5.2 To make after the spike: add 3.3?
+### 5.2 When to revisit 3.3
 
-Build 4.3 only if both of these hold:
+Build 4.3 later only if both of these hold:
 
 - **It's needed.** File-only mode misses enough to matter. For example,
   many photos have adjusted dates, or Recently Deleted and Hidden photos
@@ -205,8 +208,6 @@ photos.
 
 ## 6. Open questions
 
-- **TCC on external drives.** Libraries in `~/Pictures` need no Photos
-  permission (6.2). A library on an external drive is still untested.
 - **Shared albums.** Shared-album photos live in
   `scopes/cloudsharing/data/`, at reduced size. Should a package source
   include them? Check first whether the system library source does.
@@ -247,14 +248,14 @@ doesn't change. Only the picture shown does.
 Suggestion: start with 1. Move to 2 if the spike shows renders are removed
 on revert. Otherwise use 3, if 3.3 is built.
 
-Spike result: after a revert, no render remained (6.2, step 6). So choice 2
-looks safe. Before building it, confirm a render exists while a photo is
-edited.
+Spike result: renders exist while photos are edited (517 render images for
+521 edited assets), and none remained after a revert (6.2, step 6). So
+choice 2 is safe, and works without 3.3. It is the suggested choice now.
 
 ### 6.2 Spike results (2026-11-14)
 
-One Mac, macOS 27.2.1, library schema 5001. The probe was a sandboxed,
-ad-hoc signed debug build. It logged counts only. Libraries tested:
+Two Macs. The probe was a sandboxed, ad-hoc signed debug build. It logged
+counts only. Libraries tested:
 
 - **System.** The system library, about 10,000 assets. Optimize Mac Storage
   is on, so few originals are on disk.
@@ -262,16 +263,19 @@ ad-hoc signed debug build. It logged counts only. Libraries tested:
   then reverted.
 - **Legacy.** An old, empty library with a `Masters/` folder only (shell
   check only).
+- **External.** A 29 GB library on a USB hard-drive enclosure, about 11,000
+  assets, all stored locally. It is the system library on its Mac.
 
 | Step | Result |
 |---|---|
 | 1. Open panel | Works. `allowedContentTypes = [UTType("com.apple.photos.library")]` selects the package. A read-only security-scoped bookmark is created. |
-| 2. TCC | No prompt, and no Photos permission needed, for either library in `~/Pictures`. This includes the system library. The user-selected bookmark is enough. External drive: not tested. |
-| 3. Database | `mode=ro` reads both libraries in the sandbox, including WAL data. `immutable=1` found 0 of 4 assets in TEST, whose data was all in the WAL. Nothing was written to `database/` in any run. |
+| 2. TCC | No prompt, and no Photos permission needed, for either library in `~/Pictures`. This includes the system library. The user-selected bookmark is enough. External: all originals were read before any Photos prompt; no removable-volume prompt. |
+| 3. Database | `mode=ro` reads both libraries in the sandbox, including WAL data. `immutable=1` found 0 of 4 assets in TEST, whose data was all in the WAL. In External, both modes agreed (WAL already checkpointed). Nothing was written to `database/` in any run. |
 | 4. Layout | Own photos: `originals/<hex>/<UUID>.<ext>`. Shared Library: `scopes/collectionshare/originals/<hex>/`. Shared albums: `scopes/cloudsharing/data/<id>/`. Live Photo videos: `<UUID>_3.mov`, already ignored. The legacy library uses `Masters/`. |
-| 5. Identity | Every original's file name is its asset UUID (10,347 of 10,347 in System). PhotoKit found 5 of 5 System samples as `<UUID>/L0/001`, and 0 of 4 TEST samples. The check needs Photos permission. |
-| 6. Renders | After a revert, `resources/renders/` was empty. The database still had an adjustment timestamp and a leftover `ZUNMANAGEDADJUSTMENT` row. A render while edited: not checked. |
-| 7. Database cost | One schema seen (5001). Drift already shows: `ZHASADJUSTMENTS`, used by older tools, is gone; `ZADJUSTMENTSSTATE` replaces it. Neither library had trashed, hidden, or edited photos, so there's no measure yet of what 3.3 adds. |
+| 5. Identity | Every original's file name is its asset UUID (10,347 of 10,347 in System). PhotoKit found 5 of 5 System samples as `<UUID>/L0/001`, 5 of 5 External samples (correct: it is that Mac's system library), and 0 of 4 TEST samples. The check needs Photos permission. |
+| 6. Renders | After a revert, `resources/renders/` was empty. The database still had an adjustment timestamp and a leftover `ZUNMANAGEDADJUSTMENT` row. External: 521 assets edited, 517 render images. |
+| 7. Database cost | Drift already shows: `ZHASADJUSTMENTS`, used by older tools, is gone; `ZADJUSTMENTSSTATE` replaces it. External: the database lists 10,904 images; `originals/` holds 10,747 (98.6%). No trashed or hidden photos. Adjusted dates were not measured. |
+| Scan time | External: `originals/` took 52 s on the USB hard drive. The package root held 34,420 images, mostly derivatives. |
 
 Consequences for the plan:
 
@@ -279,8 +283,11 @@ Consequences for the plan:
   3.1 finds only the originals on disk: 64 of about 720 own photos here. The
   Sources panel should say so, using the file count. 3.3 could count the
   missing ones from the database.
-- **3.3 decision.** It needs a large library stored fully on disk, such as
-  the external-drive library. Run the probe there before deciding.
+- **3.3 deferred.** See 5.1. Revisit if photos show on the wrong day
+  because their dates were fixed in Photos.
+- **Warning matters.** The motivating external library is a system library.
+  Adding it as a package would duplicate the PhotoKit source, so 4.2 step 7
+  is needed.
 
 The probe code is not kept in the repo. It was a throwaway DEBUG build that
 logged counts under subsystem `YearAgoPhotoViewer`, category `probe`.
