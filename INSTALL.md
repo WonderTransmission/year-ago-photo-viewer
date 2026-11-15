@@ -55,8 +55,8 @@ This removes the "downloaded from the internet" mark that triggers the check.
 
 Notarizing requires a paid Apple Developer account in the publisher's name.
 This project keeps the download unsigned instead. The app is still sandboxed:
-it can read only the folders you choose and, if you allow it, your Photos
-library. It has no network access.
+it can read only the folders and Photos library files you choose and, if
+you allow it, your Photos library. It has no network access.
 
 If you'd rather not run a downloaded app, [build it from source](README.md#building).
 It takes a few minutes with Xcode.
@@ -64,6 +64,8 @@ It takes a few minutes with Xcode.
 ## Permissions
 
 - **Folders.** The app reads only folders you pick with **Add Folder…**.
+- **Photos library files.** The app reads only library files you pick with
+  **Add Photos Library File…**. These need no Photos access.
 - **Photos.** When you add the Photos library, macOS asks for access. You can
   change this later in **System Settings › Privacy & Security › Photos**.
 

@@ -1,7 +1,7 @@
 # Plan: Other Photos Libraries as Sources
 
-Status: steps 4.1, 4.2, 4.4, and 4.5 done. 4.3 is deferred (section 5.2). Option 3.1 is
-chosen. Option 3.3 is deferred (section 5.2).
+Status: done and released in 1.4 (steps 4.1, 4.2, 4.4, 4.5). Option 3.1 is
+built. Option 3.3 (step 4.3) is deferred (section 5.2).
 Trigger: users keep more than one `.photoslibrary`, for example an archive
 library on an external drive. Only the system library can be a source today.
 
