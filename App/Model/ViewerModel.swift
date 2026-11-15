@@ -1130,14 +1130,14 @@ final class ViewerModel {
     }
 }
 
-#if DEBUG
-/// Parses "yyyy-MM-dd" for the DebugToday launch argument.
 /// A message for the user that isn't an error.
 struct Notice: Equatable {
     var title: String
     var message: String
 }
 
+#if DEBUG
+/// Parses "yyyy-MM-dd" for the DebugToday launch argument.
 private enum DebugDayParser {
     static func day(_ text: String) -> LocalDateTime? {
         let parts = text.split(separator: "-").compactMap { Int($0) }
