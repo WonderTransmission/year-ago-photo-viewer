@@ -95,6 +95,70 @@ import Testing
         #expect(Set(PhotosLibraryPackage.sampleAssetIDs(in: package)) == Set(ids))
     }
 
+    // MARK: Edited copies
+
+    @Test func findsTheEditedRenderNextToTheOriginal() throws {
+        let package = try makePackage()
+        defer { Fixtures.cleanUp(package.deletingLastPathComponent()) }
+        let edited = UUID().uuidString, plain = UUID().uuidString, shared = UUID().uuidString
+        try write(package, "originals/A/\(edited).jpeg")
+        try write(package, "resources/renders/A/\(edited)_1_201_a.jpeg")
+        try write(package, "resources/renders/A/\(edited)_2_0_a.mov")         // Live Photo video render
+        try write(package, "originals/A/\(plain).jpeg")
+        try write(package, "scopes/collectionshare/originals/B/\(shared).jpeg")
+        try write(package, "scopes/collectionshare/resources/renders/B/\(shared)_1_201_a.jpeg")
+
+        func render(_ path: String) -> String? {
+            PhotosLibraryPackage.editedRender(forOriginal: path, in: package)?.path
+                .replacingOccurrences(of: package.path + "/", with: "")
+        }
+        #expect(render("originals/A/\(edited).jpeg") == "resources/renders/A/\(edited)_1_201_a.jpeg")
+        #expect(render("originals/A/\(plain).jpeg") == nil)
+        #expect(render("scopes/collectionshare/originals/B/\(shared).jpeg")
+                == "scopes/collectionshare/resources/renders/B/\(shared)_1_201_a.jpeg")
+        #expect(render("originals/Z/\(UUID().uuidString).jpeg") == nil)      // no renders folder
+        #expect(render("Masters/2019/01/02/\(edited).jpeg") == nil)
+        #expect(render("originals/A/IMG_0001.jpeg") == nil)
+    }
+
+    @Test func prefersTheStandardRenderName() throws {
+        let package = try makePackage()
+        defer { Fixtures.cleanUp(package.deletingLastPathComponent()) }
+        let id = UUID().uuidString
+        try write(package, "originals/A/\(id).heic")
+        try write(package, "resources/renders/A/\(id)_1_100_x.jpeg")
+        #expect(PhotosLibraryPackage.editedRender(forOriginal: "originals/A/\(id).heic", in: package)?
+            .lastPathComponent == "\(id)_1_100_x.jpeg")
+        try write(package, "resources/renders/A/\(id)_1_201_a.jpeg")
+        #expect(PhotosLibraryPackage.editedRender(forOriginal: "originals/A/\(id).heic", in: package)?
+            .lastPathComponent == "\(id)_1_201_a.jpeg")
+    }
+
+    @Test func timelinePhotosShowTheirEditedCopyUntilReverted() async throws {
+        let package = try makePackage()
+        defer { Fixtures.cleanUp(package.deletingLastPathComponent()) }
+        let id = UUID().uuidString
+        try write(package, "originals/A/\(id).jpeg")
+        let render = package.appending(path: "resources/renders/A/\(id)_1_201_a.jpeg")
+        try write(package, "resources/renders/A/\(id)_1_201_a.jpeg")
+
+        let index = try PhotoIndex(fileURL: nil, timeZone: utc)
+        let source = try await addAndSync(index, package)
+        let photo = try #require(try await index.loadTimeline(roots: [source.id: package]).photos.first)
+        #expect(photo.libraryPackage == package)
+        #expect(photo.displayURL() == render)
+
+        // Reverting the edit removes the render: the original shows again.
+        try FileManager.default.removeItem(at: render)
+        #expect(photo.displayURL() == photo.url)
+    }
+
+    @Test func folderPhotosShowTheirOwnFile() {
+        let photo = PhotoItem(url: URL(fileURLWithPath: "/tmp/x/originals/A/a.jpeg"),
+                              relativePath: "originals/A/a.jpeg", kind: .image, date: local(2025, 11, 3))
+        #expect(photo.displayURL() == photo.url)
+    }
+
     // MARK: Index
 
     @Test func indexesPackagePhotosWithPathsFromThePackage() async throws {

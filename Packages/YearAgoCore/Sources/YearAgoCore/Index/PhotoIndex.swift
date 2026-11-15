@@ -284,6 +284,7 @@ public actor PhotoIndex {
             let sourceID = query.int64(0)
             let locator = query.text(1)
             let isLibrary = query.text(5) == SourceRecord.Kind.photos.rawValue
+            let isPackage = query.text(5) == SourceRecord.Kind.libraryPackage.rawValue
             let url: URL
             if isLibrary {
                 url = PhotoItem.libraryURL(for: locator)
@@ -300,7 +301,8 @@ public actor PhotoIndex {
                 date: LocalDateTime(seconds: query.int64(2)),
                 hasRawPartner: query.int64(4) != 0,
                 assetIdentifier: isLibrary ? locator : nil,
-                storedFileName: query.isNull(6) ? nil : query.text(6)))
+                storedFileName: query.isNull(6) ? nil : query.text(6),
+                libraryPackage: isPackage ? roots[sourceID] : nil))
         }
         return PhotoTimeline(presorted: items)
     }

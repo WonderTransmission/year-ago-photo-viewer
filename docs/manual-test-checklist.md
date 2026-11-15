@@ -99,6 +99,9 @@ possible, one on an external drive.
   in Photos (fewer with Optimize Mac Storage). No thumbnails or duplicate
   edited copies appear.
 - [ ] **Date menu.** The source's Date menu has no File name option.
+- [ ] **Edits.** Crop a photo from this week last year in Photos. The viewer
+  shows the crop. Revert to Original in Photos: the uncropped photo shows
+  (relaunch if it doesn't update at once).
 - [ ] **Live change.** Import a photo dated last year into that library in
   Photos. It appears within a few seconds.
 - [ ] **Read-only.** After indexing, Photos still opens the library with no

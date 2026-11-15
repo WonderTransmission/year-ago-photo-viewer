@@ -1,6 +1,6 @@
 # Plan: Other Photos Libraries as Sources
 
-Status: steps 4.1, 4.2, and 4.4 done. 4.3 is deferred (section 5.2). Option 3.1 is
+Status: steps 4.1, 4.2, 4.4, and 4.5 done. 4.3 is deferred (section 5.2). Option 3.1 is
 chosen. Option 3.3 is deferred (section 5.2).
 Trigger: users keep more than one `.photoslibrary`, for example an archive
 library on an external drive. Only the system library can be a source today.
@@ -182,6 +182,28 @@ are met later.
 5. **Tests.** Use a small made-up `Photos.sqlite` fixture with only the
    tables the reader uses. Cover every schema version from 4.1.
 
+### 4.5 Show edited photos (done)
+
+Choice 2 from section 6.1: show Photos' edited copy, found by file name.
+
+1. **Core: lookup.** `PhotosLibraryPackage.editedRender(forOriginal:in:)`
+   maps `…/originals/<X>/<UUID>.<ext>` to `…/resources/renders/<X>/`. It
+   returns the image there named `<UUID>_1_201_a.*`, or else any image
+   named `<UUID>_*`. `Masters/` libraries get none.
+2. **Core: timeline.** Library-file photos carry their package
+   (`PhotoItem.libraryPackage`). `PhotoItem.displayURL()` returns the
+   render if there is one, else the original.
+3. **App: loading.** `ImageRepository` loads `displayURL()`. So the viewer,
+   filmstrip, menu bar, and widget all show the edit.
+4. **Unchanged.** Dates, duplicates, and the index still use the original.
+   The lookup runs when a photo is loaded, so new edits and reverts need no
+   re-index.
+5. **Tests.** The lookup in both originals folders, the preferred name,
+   reverts, and `Masters/`.
+
+Known limit: a photo edited again keeps its render's file name. The app may
+show the older edit until the image leaves its cache, or until relaunch.
+
 ### 4.4 Docs (done)
 
 - **Proposal.** Remove "Other Photos libraries" from the non-goals. Describe
@@ -261,12 +283,11 @@ Choices:
 Dates come from the original in all three, so the day a photo appears on
 doesn't change. Only the picture shown does.
 
-Suggestion: start with 1. Move to 2 if the spike shows renders are removed
-on revert. Otherwise use 3, if 3.3 is built.
+Decision: choice 2, built in step 4.5.
 
 Spike result: renders exist while photos are edited (517 render images for
 521 edited assets), and none remained after a revert (6.2, step 6). So
-choice 2 is safe, and works without 3.3. It is the suggested choice now.
+choice 2 is safe, and works without 3.3.
 
 ### 6.2 Spike results (2026-11-14)
 

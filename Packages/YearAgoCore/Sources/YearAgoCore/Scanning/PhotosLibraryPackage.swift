@@ -79,6 +79,34 @@ public enum PhotosLibraryPackage {
         return candidate.uppercased()
     }
 
+    /// The edited copy Photos rendered for an original, if the photo is
+    /// edited now. Photos removes the render when an edit is reverted
+    /// (plan section 6.2), so a render on disk means a current edit.
+    ///
+    /// Renders sit in `resources/renders/<subfolder>/`, next to where the
+    /// original sits under `originals/`, named "<UUID>_1_201_a.<ext>". Other
+    /// image names starting with "<UUID>_" are accepted too, in case Photos
+    /// varies the suffix. Libraries with `Masters/` (before macOS 10.15)
+    /// store edits elsewhere and get nil. Reads one small folder listing.
+    public static func editedRender(forOriginal relativePath: String, in package: URL) -> URL? {
+        var components = relativePath.split(separator: "/").map(String.init)
+        guard components.count >= 3,
+              let originalsIndex = components.lastIndex(of: "originals"),
+              originalsIndex == components.count - 3,
+              let id = assetID(fromFileName: components[components.count - 1])
+        else { return nil }
+        components.replaceSubrange(originalsIndex...originalsIndex, with: ["resources", "renders"])
+        components.removeLast()
+        let folder = package.appending(path: components.joined(separator: "/"), directoryHint: .isDirectory)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return nil }
+        let candidates = names.filter { name in
+            name.uppercased().hasPrefix(id + "_")
+                && MediaKind.classify(pathExtension: (name as NSString).pathExtension).isDisplayable
+        }
+        let preferred = candidates.first { $0.uppercased().hasPrefix(id + "_1_201_A.") } ?? candidates.sorted().first
+        return preferred.map { folder.appending(path: $0, directoryHint: .notDirectory) }
+    }
+
     /// PhotoKit's local identifier for an asset UUID.
     public static func localIdentifier(forAssetID id: String) -> String {
         "\(id)/L0/001"

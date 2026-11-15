@@ -276,7 +276,8 @@ final class ImageRepository: Sendable {
         if let assetID = photo.assetIdentifier {
             return await library.image(assetID: assetID, maxPixelSize: maxPixelSize)
         }
-        return await files.image(at: photo.url, maxPixelSize: maxPixelSize)
+        // Photos from a library file show their edited copy, if any.
+        return await files.image(at: photo.displayURL(), maxPixelSize: maxPixelSize)
     }
 }
 

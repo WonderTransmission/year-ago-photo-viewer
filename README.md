@@ -99,8 +99,7 @@ Each source has its own date setting in the Sources panel. The toolbar's
 Photos uses. The app reads its original files directly, so it needs no
 Photos permission. Compared with the Photos library source:
 
-- **Originals.** Photos show as imported. Crops and other edits made in
-  Photos don't show.
+- **Edits.** Edited photos show their edited version, as in Photos.
 - **On disk only.** With Optimize Mac Storage on, originals kept only in
   iCloud are missing.
 - **Everything.** Recently Deleted and Hidden photos show too.

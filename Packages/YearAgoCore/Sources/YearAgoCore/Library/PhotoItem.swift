@@ -21,10 +21,14 @@ public struct PhotoItem: Identifiable, Hashable, Sendable {
     /// The file name recorded in the index, if any. Library items only
     /// have one once their original file names have been fetched.
     public var storedFileName: String?
+    /// For photos from a Photos library file: the package. Used to find
+    /// the photo's edited copy (`PhotosLibraryPackage.editedRender`).
+    public var libraryPackage: URL?
 
     public init(sourceID: Int64 = 0, url: URL, relativePath: String, kind: MediaKind,
                 date: LocalDateTime, hasRawPartner: Bool = false,
-                assetIdentifier: String? = nil, storedFileName: String? = nil) {
+                assetIdentifier: String? = nil, storedFileName: String? = nil,
+                libraryPackage: URL? = nil) {
         self.sourceID = sourceID
         self.url = url
         self.relativePath = relativePath
@@ -33,6 +37,15 @@ public struct PhotoItem: Identifiable, Hashable, Sendable {
         self.hasRawPartner = hasRawPartner
         self.assetIdentifier = assetIdentifier
         self.storedFileName = storedFileName
+        self.libraryPackage = libraryPackage
+    }
+
+    /// The file to show: the edited copy when this photo comes from a
+    /// Photos library file and is edited there, else `url`. Touches the
+    /// disk for library-file photos; call off the main thread.
+    public func displayURL() -> URL {
+        guard let libraryPackage else { return url }
+        return PhotosLibraryPackage.editedRender(forOriginal: relativePath, in: libraryPackage) ?? url
     }
 
     /// True for photos from the Photos library.
