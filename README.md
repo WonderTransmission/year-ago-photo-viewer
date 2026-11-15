@@ -10,8 +10,9 @@ years. Open it to step through last year's photos from the past week. Press
 
 - **Past weeks, year by year.** See the 1–6 weeks leading up to today's date,
   N years ago. Step through one year's photos, then move to the next year.
-- **Your photos, wherever they are.** Use the Mac's Photos library, any number
-  of folders, or both. Their photos merge into one timeline.
+- **Your photos, wherever they are.** Use the Mac's Photos library, other
+  Photos library files (such as an archive on an external drive), and any
+  number of folders. Their photos merge into one timeline.
 - **Your choice of date.** Each source dates photos by EXIF capture date, file
   name (such as `Screenshot 2022-03-16 at 13.50.15.png`), created date, or
   modified date.
@@ -79,7 +80,8 @@ App Groups need a development team, so:
 ## Using it
 
 1. **Add a source.** Click **Add Folder…** on the welcome screen, or open
-   **Sources…** (⇧⌘O) to add folders or the Photos library.
+   **Sources…** (⇧⌘O) to add folders, the Photos library, or a Photos
+   library file.
 2. **Step through photos.** Use ← and →, the arrow buttons, or the filmstrip.
 3. **Zoom.** Pinch, double-click, or use ⌘= / ⌘- / ⌘0. Drag to look around.
    Moving to another photo returns to fit.
@@ -90,6 +92,23 @@ App Groups need a development team, so:
 
 Each source has its own date setting in the Sources panel. The toolbar's
 **Default date** applies to new sources, and can apply to all at once.
+
+### Photos library files
+
+**Add Photos Library File…** adds any `.photoslibrary`, not just the one
+Photos uses. The app reads its original files directly, so it needs no
+Photos permission. Compared with the Photos library source:
+
+- **Originals.** Photos show as imported. Crops and other edits made in
+  Photos don't show.
+- **On disk only.** With Optimize Mac Storage on, originals kept only in
+  iCloud are missing.
+- **Everything.** Recently Deleted and Hidden photos show too.
+- **Dates.** Dates come from the files, so date fixes made in Photos don't
+  show. The File name date isn't offered: Photos renames originals.
+
+If the file is the library Photos uses, and the Photos library source is
+also added, the app says so. Photos in both show once.
 
 ## Testing
 
@@ -128,8 +147,8 @@ Scripts/check-privacy.sh
 
 - **Read-only.** The app never changes, moves, or deletes photos.
 - **On your Mac.** It has no network access and sends no telemetry.
-- **Sandboxed.** It reads only folders you choose and, if you add it, the
-  Photos library.
+- **Sandboxed.** It reads only the folders and library files you choose
+  and, if you add it, the Photos library.
 - **Local index.** Its index lives in the app's sandbox container under
   Application Support. Removing a source deletes that source's index.
 

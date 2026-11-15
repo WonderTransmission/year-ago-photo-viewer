@@ -1,6 +1,6 @@
 # Plan: Other Photos Libraries as Sources
 
-Status: steps 4.1 (spike) and 4.2 done; 4.4 (docs) to do. Option 3.1 is
+Status: steps 4.1, 4.2, and 4.4 done. 4.3 is deferred (section 5.2). Option 3.1 is
 chosen. Option 3.3 is deferred (section 5.2).
 Trigger: users keep more than one `.photoslibrary`, for example an archive
 library on an external drive. Only the system library can be a source today.
@@ -182,7 +182,7 @@ are met later.
 5. **Tests.** Use a small made-up `Photos.sqlite` fixture with only the
    tables the reader uses. Cover every schema version from 4.1.
 
-### 4.4 Docs (to do)
+### 4.4 Docs (done)
 
 - **Proposal.** Remove "Other Photos libraries" from the non-goals. Describe
   the new source kind.

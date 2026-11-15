@@ -86,6 +86,29 @@ Tip: copy the boxes into a release issue and tick them there.
 - [ ] **Fill-in.** During a long first index of a large folder, photos appear
   and the year list grows every few seconds; the current photo stays put.
 
+## Photos library files
+
+Use a second library (hold ⌥ while opening Photos to create one) and, if
+possible, one on an external drive.
+
+- [ ] **Picker.** Sources… → Add Photos Library File… Only `.photoslibrary`
+  files can be chosen. No Photos prompt appears.
+- [ ] **Photos appear.** The library indexes with progress. Its photos from
+  this week last year appear, merged with other sources.
+- [ ] **No extras.** The photo count roughly matches the library's own count
+  in Photos (fewer with Optimize Mac Storage). No thumbnails or duplicate
+  edited copies appear.
+- [ ] **Date menu.** The source's Date menu has no File name option.
+- [ ] **Live change.** Import a photo dated last year into that library in
+  Photos. It appears within a few seconds.
+- [ ] **Read-only.** After indexing, Photos still opens the library with no
+  repair prompt.
+- [ ] **Drive.** With the library on an external drive, eject the drive.
+  The source shows "Offline". Plug it back in: it comes back.
+- [ ] **System library warning.** With the Photos Library source added and
+  allowed, add the system library's file. The app says it's the same
+  library. The new row is named "… (File)". Each photo shows once.
+
 ## Menu bar item (M9)
 
 - [ ] **Shown by default.** A clock-arrow icon appears in the menu bar.

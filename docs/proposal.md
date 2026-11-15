@@ -14,6 +14,8 @@ week two years ago, then three.
 The app reads photos from one or more sources at once:
 
 - **Photos library.** The Mac's system Photos library, via Apple's PhotoKit.
+- **Photos library files.** Any `.photoslibrary`, read as files. See
+  section 6.4.
 - **Folders.** Any number of folders of image files, including nested
   subfolders.
 
@@ -48,7 +50,6 @@ repo will contain no personal data.
 - **Sharing.** No export, share sheet, or upload.
 - **Video.** The app ignores videos. Live Photos show their still key frame.
 - **Date fallbacks.** A photo without the chosen date is ignored.
-- **Other Photos libraries.** PhotoKit only reads the system library.
 - **iOS or iPadOS.** macOS only.
 - **App Store release.** Users build from source.
 
@@ -316,6 +317,8 @@ A sheet that lists every photo source:
 - **Nested folders.** Adding a folder inside an existing source is allowed.
   Its files are counted once.
 - **Photos Library.** It can be added at most once.
+- **Photos library files.** **Add Photos Library File…** adds a
+  `.photoslibrary`. Its Date menu has no File name option.
 
 ### 5.2 Menu bar item
 
@@ -421,6 +424,12 @@ Created and EXIF date sources. The File name source needs each asset's
 original file name. Fetching that is slow, so the app caches it like a folder
 index.
 
+**Other libraries.** PhotoKit only reads the system library. Any other
+`.photoslibrary` is read as files: only its originals folders, indexed like a
+folder. The app never reads or writes the library's database. See
+[nonsystem-photoslibrary-target-implementation-plan.md](nonsystem-photoslibrary-target-implementation-plan.md)
+for the trade-offs.
+
 ### 6.5 Permissions and sandbox
 
 - **Sandbox.** The app runs in the App Sandbox.
@@ -428,6 +437,8 @@ index.
   security-scoped bookmark so access survives relaunch.
 - **Folders.** Each folder source has its own bookmark.
 - **Photos.** The app asks for Photos access when the user adds that source.
+- **Photos library files.** Picked with an open panel and bookmarked, like
+  folders. No Photos access is needed.
 - **App Group.** Shared by the app and the widget, for snapshots only.
 - **Network.** No network entitlement.
 
