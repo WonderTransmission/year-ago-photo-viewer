@@ -21,12 +21,12 @@ years. Open it to step through last year's photos from the past week. Press
   skipped.
 - **Fast.** A saved index means later launches only check for changes. New
   photos appear within seconds.
-- **Drives come and go.** A folder on an unplugged drive shows as offline and
-  comes back when the drive does.
+- **Drives come and go.** A folder or library file on an unplugged drive
+  shows as offline and comes back when the drive does.
 - **At a glance.** An "On This Day" menu bar item shows a photo from a year
   ago. A desktop widget shows one, three, or six photos.
 
-![The Sources panel with two folders](docs/images/sources.png)
+![The Sources panel with two folders and a Photos library file](docs/images/sources.png)
 
 ## Installing
 
@@ -88,7 +88,8 @@ App Groups need a development team, so:
 4. **Change year.** Use **Next Year** / **Previous Year**, ⌘] / ⌘[, or the
    year menu.
 5. **Adjust.** Pick the window length (1–6 weeks) in the toolbar. In
-   **Settings** (⌘,) choose whether to show years with no photos.
+   **Settings** (⌘,) choose whether to show years with no photos, and
+   whether to show the menu bar item.
 
 Each source has its own date setting in the Sources panel. The toolbar's
 **Default date** applies to new sources, and can apply to all at once.
@@ -103,11 +104,13 @@ Photos permission. Compared with the Photos library source:
 - **On disk only.** With Optimize Mac Storage on, originals kept only in
   iCloud are missing.
 - **Everything.** Recently Deleted and Hidden photos show too.
+- **Shared photos.** Some photos shared with you may show. The Photos
+  library source leaves those out.
 - **Dates.** Dates come from the files, so date fixes made in Photos don't
   show. The File name date isn't offered: Photos renames originals.
 
 If the file is the library Photos uses, and the Photos library source is
-also added, the app says so. Photos in both show once.
+also added with access, the app says so. Photos in both show once.
 
 ## Testing
 
@@ -124,7 +127,8 @@ YAPV_SCALE_TEST=1 swift test --package-path Packages/YearAgoCore -c release --fi
 ```
 
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) covers what unit
-tests can't: the Photos library, permissions, drives, and the widget.
+tests can't: the Photos library, library files, permissions, drives, and the
+widget.
 
 ## Making a release
 
