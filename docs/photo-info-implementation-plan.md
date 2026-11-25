@@ -1,6 +1,7 @@
 # Plan: Photo Info Popover
 
-Status: done and released in 1.5 (steps 4.1–4.4).
+Status: done and released in 1.5 (steps 4.1–4.4). The checklist's Photo info
+section passed on the installed 1.5 app (2026-11-25).
 Trigger: users want to see a photo's EXIF data, and where it was taken.
 
 ## 1. Goal
