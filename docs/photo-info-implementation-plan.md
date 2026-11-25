@@ -1,6 +1,6 @@
 # Plan: Photo Info Popover
 
-Status: done (steps 4.1–4.4).
+Status: done and released in 1.5 (steps 4.1–4.4).
 Trigger: users want to see a photo's EXIF data, and where it was taken.
 
 ## 1. Goal
