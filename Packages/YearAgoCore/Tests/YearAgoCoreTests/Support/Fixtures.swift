@@ -22,13 +22,15 @@ enum Fixtures {
     /// - Parameters:
     ///   - exif: entries for the EXIF dictionary, e.g. DateTimeOriginal.
     ///   - tiff: entries for the TIFF dictionary, e.g. DateTime.
+    ///   - gps: entries for the GPS dictionary, e.g. Latitude.
     static func writeImage(
         to url: URL,
         type: UTType = .jpeg,
         width: Int = 8,
         height: Int = 6,
         exif: [CFString: Any] = [:],
-        tiff: [CFString: Any] = [:]
+        tiff: [CFString: Any] = [:],
+        gps: [CFString: Any] = [:]
     ) throws {
         let image = try solidImage(width: width, height: height)
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
@@ -37,6 +39,7 @@ enum Fixtures {
         var properties: [CFString: Any] = [:]
         if !exif.isEmpty { properties[kCGImagePropertyExifDictionary] = exif }
         if !tiff.isEmpty { properties[kCGImagePropertyTIFFDictionary] = tiff }
+        if !gps.isEmpty { properties[kCGImagePropertyGPSDictionary] = gps }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
             throw FixtureError.cannotWrite(url)

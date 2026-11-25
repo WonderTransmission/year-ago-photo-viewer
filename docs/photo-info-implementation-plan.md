@@ -1,6 +1,6 @@
 # Plan: Photo Info Popover
 
-Status: proposed; step 4.1 to do.
+Status: step 4.1 done; 4.2 and 4.3 to do.
 Trigger: users want to see a photo's EXIF data, and where it was taken.
 
 ## 1. Goal
@@ -40,7 +40,20 @@ An ⓘ button shows everything known about the current photo in a popover.
 
 ## 4. Work plan
 
-### 4.1 Core: metadata model and formatting (to do)
+### 4.1 Core: metadata model and formatting (done)
+
+Built as `PhotoInfo` and `PhotoInfoReader` (in `Imaging/`), with these
+details:
+
+- **More sections.** Leftover values go into one section per dictionary,
+  titled "More: EXIF", "More: TIFF", "More: Apple maker notes", and so on.
+  Nested dictionaries are flattened as "Parent › Key".
+- **Unknown keys.** They get readable labels from their ImageIO names:
+  "ISOSpeedRatings" becomes "ISO Speed Ratings".
+- **Long arrays.** Arrays of more than 32 values count as binary.
+- **Maps URL.** `Coordinate.mapsURL(label:)` builds the `maps://` link, so
+  it's tested in the core.
+- **Spelling.** Labels use US spelling ("Color profile"), like macOS.
 
 1. **Reading.** Add `PhotoInfoReader.read(at:) -> PhotoInfo` in the core
    package. It calls `CGImageSourceCopyPropertiesAtIndex` once and keeps
@@ -49,7 +62,7 @@ An ⓘ button shows everything known about the current photo in a popover.
    - Camera (make, model, software)
    - Exposure (shutter, aperture, ISO, exposure bias, flash, metering)
    - Lens (model, focal length, 35 mm equivalent)
-   - Image (pixel size, orientation, colour profile, file type and size)
+   - Image (pixel size, orientation, color profile, file type and size)
    - Dates (original, digitized, modified, with time zone offsets)
    - Location (latitude, longitude, altitude, direction)
    - Other (every remaining key, by dictionary)
