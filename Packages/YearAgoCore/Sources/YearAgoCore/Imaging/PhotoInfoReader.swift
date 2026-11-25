@@ -14,14 +14,17 @@ public enum PhotoInfoReader {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [String: Any]
         else { return nil }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey, .contentModificationDateKey])
         return info(fromProperties: properties, typeIdentifier: CGImageSourceGetType(source) as String?,
-                    fileSize: size)
+                    fileSize: values?.fileSize, fileCreated: values?.creationDate,
+                    fileModified: values?.contentModificationDate)
     }
 
-    /// Builds the info from ImageIO's property dictionary.
+    /// Builds the info from ImageIO's property dictionary. File dates show
+    /// in `timeZone`, with its offset.
     public static func info(fromProperties properties: [String: Any], typeIdentifier: String? = nil,
-                            fileSize: Int? = nil) -> PhotoInfo {
+                            fileSize: Int? = nil, fileCreated: Date? = nil, fileModified: Date? = nil,
+                            timeZone: TimeZone = .current) -> PhotoInfo {
         var builder = Builder(properties)
         let coordinate = builder.coordinate()
         var sections = [
@@ -29,7 +32,7 @@ public enum PhotoInfoReader {
             builder.exposure(),
             builder.lens(),
             builder.image(typeIdentifier: typeIdentifier, fileSize: fileSize),
-            builder.dates(),
+            builder.dates(fileCreated: fileCreated, fileModified: fileModified, timeZone: timeZone),
             builder.location(coordinate),
         ]
         sections += builder.remaining()
@@ -105,7 +108,7 @@ private struct Builder {
         var rows: [PhotoInfo.Row] = []
         rows.add("Shutter speed", number(exif, kCGImagePropertyExifExposureTime).map(Format.shutter))
         rows.add("Aperture", number(exif, kCGImagePropertyExifFNumber).map { "f/\(Format.decimal($0, digits: 1))" })
-        rows.add("ISO", number(exif, kCGImagePropertyExifISOSpeedRatings).map { "ISO \(Format.decimal($0))" })
+        rows.add("ISO", number(exif, kCGImagePropertyExifISOSpeedRatings).map { Format.decimal($0) })
         rows.add("Exposure bias", number(exif, kCGImagePropertyExifExposureBiasValue).map(Format.bias))
         rows.add("Program", number(exif, kCGImagePropertyExifExposureProgram).map(Format.program))
         rows.add("Metering", number(exif, kCGImagePropertyExifMeteringMode).map(Format.metering))
@@ -141,15 +144,23 @@ private struct Builder {
         rows.add("Bit depth", number(top, kCGImagePropertyDepth).map { "\(Format.decimal($0)) bits per channel" })
         let dpiWidth = number(top, kCGImagePropertyDPIWidth)
         let dpiHeight = number(top, kCGImagePropertyDPIHeight)
+        // TIFF repeats the resolution with a unit code; show it once.
+        let xResolution = number(tiff, kCGImagePropertyTIFFXResolution)
+        let yResolution = number(tiff, kCGImagePropertyTIFFYResolution)
+        let unit = number(tiff, kCGImagePropertyTIFFResolutionUnit)
         if let dpiWidth, let dpiHeight {
             rows.add("Resolution", "\(Format.decimal(dpiWidth)) × \(Format.decimal(dpiHeight)) dpi")
+        } else if let xResolution, let yResolution {
+            let suffix = unit == 3 ? "pixels per cm" : "dpi"
+            rows.add("Resolution", "\(Format.decimal(xResolution)) × \(Format.decimal(yResolution)) \(suffix)")
         }
+        rows.add("Color space", number(exif, kCGImagePropertyExifColorSpace).map(Format.colorSpace))
         rows.add("File type", typeIdentifier.map { UTType($0)?.localizedDescription ?? $0 })
         rows.add("File size", fileSize.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) })
         return PhotoInfo.Section("Image", rows)
     }
 
-    mutating func dates() -> PhotoInfo.Section {
+    mutating func dates(fileCreated: Date?, fileModified: Date?, timeZone: TimeZone) -> PhotoInfo.Section {
         var rows: [PhotoInfo.Row] = []
         func date(_ dictionary: String, _ key: CFString, offset: CFString) -> String? {
             guard let text = string(dictionary, key) else { return nil }
@@ -158,6 +169,8 @@ private struct Builder {
         rows.add("Taken", date(exif, kCGImagePropertyExifDateTimeOriginal, offset: kCGImagePropertyExifOffsetTimeOriginal))
         rows.add("Digitized", date(exif, kCGImagePropertyExifDateTimeDigitized, offset: kCGImagePropertyExifOffsetTimeDigitized))
         rows.add("Modified", date(tiff, kCGImagePropertyTIFFDateTime, offset: kCGImagePropertyExifOffsetTime))
+        rows.add("File created", fileCreated.map { PhotoInfo.format($0, timeZone) })
+        rows.add("File modified", fileModified.map { PhotoInfo.format($0, timeZone) })
         return PhotoInfo.Section("Dates", rows)
     }
 
@@ -310,6 +323,14 @@ enum Format {
         let text = decimal(abs(value), digits: 1)
         if text == "0" { return "0 EV" }
         return "\(value < 0 ? "−" : "+")\(text) EV"
+    }
+
+    static func colorSpace(_ value: Double) -> String {
+        switch Int(value) {
+        case 1: "sRGB"
+        case 65535: "Uncalibrated"
+        default: decimal(value)
+        }
     }
 
     static func program(_ value: Double) -> String {

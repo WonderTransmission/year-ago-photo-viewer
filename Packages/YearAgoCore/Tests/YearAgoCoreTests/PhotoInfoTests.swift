@@ -64,7 +64,7 @@ import Testing
         #expect(info.value("Model") == "X100")
         #expect(info.value("Shutter speed") == "1/250 s")
         #expect(info.value("Aperture") == "f/2.8")
-        #expect(info.value("ISO") == "ISO 400")
+        #expect(info.value("ISO") == "400")
         #expect(info.value("Exposure bias") == "−0.7 EV")
         #expect(info.value("Program") == "Normal")
         #expect(info.value("Metering") == "Pattern")
@@ -106,6 +106,41 @@ import Testing
         #expect(info.coordinate?.longitude == -116.8669)
         #expect(info.value("Coordinates") == "36.46220° N, 116.86690° W")
         #expect(info.value("Altitude") == "-86 m")
+    }
+
+    @Test func labelsColorSpaceAndShowsResolutionOnce() {
+        let properties: [String: Any] = [
+            exifKey: [kCGImagePropertyExifColorSpace as String: 65535],
+            tiffKey: [kCGImagePropertyTIFFXResolution as String: 300,
+                      kCGImagePropertyTIFFYResolution as String: 300,
+                      kCGImagePropertyTIFFResolutionUnit as String: 2],
+        ]
+        let info = PhotoInfoReader.info(fromProperties: properties)
+        #expect(info.value("Color space") == "Uncalibrated")
+        #expect(info.value("Resolution") == "300 × 300 dpi")
+        #expect(info.section("More: TIFF") == nil)
+        #expect(info.section("More: EXIF") == nil)
+        #expect(Format.colorSpace(1) == "sRGB")
+    }
+
+    @Test func showsFileDates() throws {
+        let created = Date(timeIntervalSince1970: TimeInterval(local(2025, 11, 3, 9).seconds))
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let info = PhotoInfoReader.info(fromProperties: [:], fileCreated: created,
+                                        fileModified: created.addingTimeInterval(60), timeZone: utc)
+        #expect(info.value("File created") == "2025-11-03 09:00:00 +00:00")
+        #expect(info.value("File modified") == "2025-11-03 09:01:00 +00:00")
+    }
+
+    @Test func insertsRowsFirstOrInANewSection() {
+        var info = PhotoInfo(sections: [
+            PhotoInfo.Section("Image", [PhotoInfo.Row("Size", "1 × 1 pixels")]),
+            PhotoInfo.Section("Location", [PhotoInfo.Row("Coordinates", "x")]),
+        ])
+        info.insertFirst(PhotoInfo.Row("Date used", "EXIF date"), inSection: "Dates")
+        #expect(info.sections.map(\.title) == ["Image", "Dates", "Location"])
+        info.insertFirst(PhotoInfo.Row("Note", "first"), inSection: "Dates")
+        #expect(info.section("Dates")?.rows.map(\.label) == ["Note", "Date used"])
     }
 
     @Test func noFixMeansNoLocation() {

@@ -489,13 +489,20 @@ final class ViewerModel {
     /// not the edited copy, since edits may lose metadata. Photos library
     /// items get PhotoKit's basic info. Nil if nothing could be read.
     func photoInfo(for photo: PhotoItem) async -> PhotoInfo? {
+        var info: PhotoInfo?
         if let assetID = photo.assetIdentifier {
             guard var details = await photoLibrary.details(forAssetID: assetID) else { return nil }
             details.fileName = photo.storedFileName
-            return PhotoInfo.libraryItem(details)
+            info = PhotoInfo.libraryItem(details)
+        } else {
+            let url = photo.url
+            info = await Task.detached(priority: .userInitiated) { PhotoInfoReader.read(at: url) }.value
         }
-        let url = photo.url
-        return await Task.detached(priority: .userInitiated) { PhotoInfoReader.read(at: url) }.value
+        // Which date the app goes by: the source's date setting.
+        if let dateSource = source(id: photo.sourceID)?.dateSource {
+            info?.insertFirst(PhotoInfo.Row("Date used", dateSource.displayName), inSection: "Dates")
+        }
+        return info
     }
 
     /// Reveals the current photo: selects the file in Finder, or opens the

@@ -40,6 +40,18 @@ public struct PhotoInfo: Equatable, Sendable {
         self.note = note
     }
 
+    /// Adds `row` at the top of the section titled `title`. A missing
+    /// section is created before Location and the "More" sections.
+    public mutating func insertFirst(_ row: Row, inSection title: String) {
+        if let index = sections.firstIndex(where: { $0.title == title }) {
+            sections[index].rows.insert(row, at: 0)
+            return
+        }
+        let position = sections.firstIndex { $0.title == "Location" || $0.title.hasPrefix("More:") }
+            ?? sections.count
+        sections.insert(Section(title, [row]), at: position)
+    }
+
     /// The section with `title`, if present.
     public func section(_ title: String) -> Section? {
         sections.first { $0.title == title }
