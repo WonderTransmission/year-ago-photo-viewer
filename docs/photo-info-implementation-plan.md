@@ -1,6 +1,6 @@
 # Plan: Photo Info Popover
 
-Status: steps 4.1 and 4.2 done; 4.3 to do.
+Status: steps 4.1–4.3 done (4.3 awaits manual checks); 4.4 to do.
 Trigger: users want to see a photo's EXIF data, and where it was taken.
 
 ## 1. Goal
@@ -102,7 +102,23 @@ library returns made-up details.
 4. **Off the main thread.** Fetch the asset with `@concurrent`, like the
    other PhotoKit calls.
 
-### 4.3 App: the popover (to do)
+### 4.3 App: the popover (done; manual checks pending)
+
+Built as `PhotoInfoView`, opened from the caption's ⓘ button or View ›
+Photo Info (⌘I). Differences from the steps below:
+
+- **Sizing.** A scroll view in a popover has no natural height, so the
+  popover measures its rows and sizes to them, up to 460 points.
+- **Arrow keys.** The popover holds hidden ← and → shortcuts that change
+  photos, so arrows work even when it has focus.
+- **Copy.** Values are selectable text, so ⌘C copies a selection. Copy All
+  copies every section.
+- **Debug.** `-DebugShowInfo YES` opens the popover at launch, and
+  `-DebugNextPhotoAfter <seconds>` steps to the next photo.
+
+Seen working on made-up photos: all sections, the location row, and
+closing when the photo changes. Still to check by hand: arrow keys while
+open, Open in Maps, and a real Photos library item.
 
 1. **Button.** Add an ⓘ button at the end of the caption bar. Add
    **View › Photo Info** with ⌘I. Both are disabled when no photo shows.

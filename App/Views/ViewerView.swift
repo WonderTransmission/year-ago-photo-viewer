@@ -25,6 +25,9 @@ struct ViewerView: View {
                 FilmstripView()
             }
         }
+        // Moving to another photo (arrows, filmstrip, year or window
+        // change, or the photo leaving the timeline) closes Photo Info.
+        .onChange(of: model.currentPhoto?.id) { model.isShowingInfo = false }
     }
 
     @ViewBuilder
@@ -86,6 +89,18 @@ struct ViewerView: View {
         .padding()
     }
 
+    private func infoButton(_ photo: PhotoItem) -> some View {
+        @Bindable var model = model
+        return Button("Photo Info", systemImage: "info.circle") { model.toggleInfo() }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Show camera details, dates, and location (⌘I)")
+            .popover(isPresented: $model.isShowingInfo, arrowEdge: .top) {
+                PhotoInfoView(photo: photo)
+                    .environment(model)
+            }
+    }
+
     private var caption: some View {
         HStack {
             if let photo = model.currentPhoto {
@@ -109,6 +124,7 @@ struct ViewerView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                infoButton(photo)
             } else {
                 Spacer()
             }

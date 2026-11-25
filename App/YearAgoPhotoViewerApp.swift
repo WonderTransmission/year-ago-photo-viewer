@@ -76,6 +76,10 @@ private struct ViewerCommands: Commands {
                 .keyboardShortcut("0")
                 .disabled(!model.zoom.isZoomed)
             Divider()
+            Button(model.isShowingInfo ? "Hide Photo Info" : "Photo Info") { model.toggleInfo() }
+                .keyboardShortcut("i")
+                .disabled(model.currentPhoto == nil)
+            Divider()
         }
 
         CommandMenu("Go") {

@@ -245,6 +245,8 @@ final class ViewerModel {
     var isAddingFolder = false
     /// Drives the Sources panel.
     var isShowingSources = false
+    /// Drives the Photo Info popover. Cleared whenever the photo changes.
+    var isShowingInfo = false
 
     /// Full-size images and filmstrip thumbnails, from files or Photos.
     let images = ImageRepository(countLimit: 48)
@@ -477,6 +479,25 @@ final class ViewerModel {
         currentPhoto?.isLibraryAsset == true ? "Open Photos" : "Show in Finder"
     }
 
+    /// Shows or hides the Photo Info popover for the current photo.
+    func toggleInfo() {
+        isShowingInfo = currentPhoto != nil && !isShowingInfo
+    }
+
+    /// Everything known about `photo`, for the Photo Info popover. Files are
+    /// read off the main thread; library-file photos use their original,
+    /// not the edited copy, since edits may lose metadata. Photos library
+    /// items get PhotoKit's basic info. Nil if nothing could be read.
+    func photoInfo(for photo: PhotoItem) async -> PhotoInfo? {
+        if let assetID = photo.assetIdentifier {
+            guard var details = await photoLibrary.details(forAssetID: assetID) else { return nil }
+            details.fileName = photo.storedFileName
+            return PhotoInfo.libraryItem(details)
+        }
+        let url = photo.url
+        return await Task.detached(priority: .userInitiated) { PhotoInfoReader.read(at: url) }.value
+    }
+
     /// Reveals the current photo: selects the file in Finder, or opens the
     /// Photos app for library items (PhotoKit cannot select an asset there).
     func revealCurrentPhoto() {
@@ -575,6 +596,21 @@ final class ViewerModel {
             Task {
                 try? await Task.sleep(for: .seconds(stopAfter))
                 stopCurrentIndexing()
+            }
+        }
+        // -DebugShowInfo YES opens Photo Info; -DebugNextPhotoAfter <seconds>
+        // then steps to the next photo, which should close it.
+        if UserDefaults.standard.bool(forKey: "DebugShowInfo") {
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                isShowingInfo = currentPhoto != nil
+            }
+        }
+        let nextAfter = UserDefaults.standard.double(forKey: "DebugNextPhotoAfter")
+        if nextAfter > 0 {
+            Task {
+                try? await Task.sleep(for: .seconds(nextAfter))
+                nextPhoto()
             }
         }
         // -DebugShowIndexingDetails YES opens the toolbar progress popover.
