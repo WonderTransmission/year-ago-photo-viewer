@@ -112,6 +112,22 @@ possible, one on an external drive.
   allowed, add the system library's file. The app says it's the same
   library. The new row is named "… (File)". Each photo shows once.
 
+## Photo info
+
+- [ ] **Open and close.** ⓘ in the caption, or ⌘I, opens Photo Info. ⌘I
+  again closes it.
+- [ ] **Folder photo with GPS.** Camera, Exposure, Lens, Image, Dates, and
+  Location sections show. "Date used" names the source's date setting.
+  **Open in Maps** opens Maps at the right place.
+- [ ] **No GPS.** A photo without a location has no Location section and no
+  Maps button.
+- [ ] **Photos library item.** Only Image, Dates, and Location (if any)
+  show, with the note about camera details.
+- [ ] **Edited library-file photo.** The original's metadata shows.
+- [ ] **Closes on navigation.** ← or → while it's open changes the photo
+  and closes it. So do a filmstrip click and a year change.
+- [ ] **Copy All.** Pasting gives every section as text.
+
 ## Menu bar item (M9)
 
 - [ ] **Shown by default.** A clock-arrow icon appears in the menu bar.

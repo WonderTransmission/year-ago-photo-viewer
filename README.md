@@ -23,6 +23,8 @@ years. Open it to step through last year's photos from the past week. Press
   photos appear within seconds.
 - **Drives come and go.** A folder or library file on an unplugged drive
   shows as offline and comes back when the drive does.
+- **Photo info.** See a photo's camera details, dates, and EXIF data. If
+  it has a location, open it in Maps.
 - **At a glance.** An "On This Day" menu bar item shows a photo from a year
   ago. A desktop widget shows one, three, or six photos.
 
@@ -87,7 +89,10 @@ App Groups need a development team, so:
    Moving to another photo returns to fit.
 4. **Change year.** Use **Next Year** / **Previous Year**, ⌘] / ⌘[, or the
    year menu.
-5. **Adjust.** Pick the window length (1–6 weeks) in the toolbar. In
+5. **Photo info.** Click ⓘ in the caption bar, or press ⌘I. Moving to another
+   photo closes it. **Open in Maps** shows where the photo was taken. Photos
+   library items show basic info only.
+6. **Adjust.** Pick the window length (1–6 weeks) in the toolbar. In
    **Settings** (⌘,) choose whether to show years with no photos, and
    whether to show the menu bar item.
 
@@ -101,6 +106,8 @@ Photos uses. The app reads its original files directly, so it needs no
 Photos permission. Compared with the Photos library source:
 
 - **Edits.** Edited photos show their edited version, as in Photos.
+- **File names.** Photos stores originals under ID names, so the caption
+  shows names like `1A2B3C4D-….jpeg`.
 - **On disk only.** With Optimize Mac Storage on, originals kept only in
   iCloud are missing.
 - **Everything.** Recently Deleted and Hidden photos show too.
@@ -149,7 +156,8 @@ Scripts/check-privacy.sh
 ## Privacy
 
 - **Read-only.** The app never changes, moves, or deletes photos.
-- **On your Mac.** It has no network access and sends no telemetry.
+- **On your Mac.** It has no network access and sends no telemetry. **Open
+  in Maps** hands a photo's location to the Maps app, only when you click it.
 - **Sandboxed.** It reads only the folders and library files you choose
   and, if you add it, the Photos library.
 - **Local index.** Its index lives in the app's sandbox container under

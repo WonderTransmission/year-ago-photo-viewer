@@ -1,6 +1,6 @@
 # Plan: Photo Info Popover
 
-Status: steps 4.1–4.3 done (4.3 awaits manual checks); 4.4 to do.
+Status: done (steps 4.1–4.4).
 Trigger: users want to see a photo's EXIF data, and where it was taken.
 
 ## 1. Goal
@@ -116,9 +116,18 @@ Photo Info (⌘I). Differences from the steps below:
 - **Debug.** `-DebugShowInfo YES` opens the popover at launch, and
   `-DebugNextPhotoAfter <seconds>` steps to the next photo.
 
-Seen working on made-up photos: all sections, the location row, and
-closing when the photo changes. Still to check by hand: arrow keys while
-open, Open in Maps, and a real Photos library item.
+Checked by hand (2026-11-25): ⌘I, arrows while open, Open in Maps, Copy
+All, a photo without GPS, a folder photo, a library-file photo, and a real
+Photos library item.
+
+Polish after those checks:
+
+- **ISO.** Shows "200", not "ISO 200".
+- **Raw codes.** EXIF color space and TIFF resolution units are labelled in
+  Image, not left as numbers in More sections.
+- **File dates.** Files show their own created and modified dates.
+- **Date used.** Every photo shows which date the app goes by: its source's
+  date setting.
 
 1. **Button.** Add an ⓘ button at the end of the caption bar. Add
    **View › Photo Info** with ⌘I. Both are disabled when no photo shows.
@@ -142,7 +151,7 @@ open, Open in Maps, and a real Photos library item.
 8. **Accessibility.** The button's label is "Photo Info". VoiceOver reads
    each row as "Label, Value".
 
-### 4.4 Docs (to do)
+### 4.4 Docs (done)
 
 - **README.** Add a feature line and a "Using it" step. Keep the privacy
   line as is: still no network access.
@@ -162,5 +171,9 @@ open, Open in Maps, and a real Photos library item.
   newer files. Show them when present; otherwise show the time as stored.
 - **RAW pairs.** The popover reads the file shown, usually the JPEG. Should
   it also list the RAW partner's name? Suggest yes, as one row under Image.
+  Not built yet.
+- **Library-file names.** Library files store originals under ID names, so
+  the caption shows names like `1A2B3C4D-….jpeg`. The real names are in
+  Photos' database, which the deferred database reader would read.
 - **Later.** An opt-in inline map (needs the network entitlement), and full
   EXIF for Photos Library items.

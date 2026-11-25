@@ -272,6 +272,12 @@ One main window, built in SwiftUI. The current photo fills most of it.
 - **Photo.** The current photo, scaled to fit.
 - **Photo arrows.** Step to the previous or next photo in this year.
 - **Caption.** The photo's date, and the name of its photo source.
+- **Photo info.** An ⓘ button at the end of the caption (or ⌘I) opens a
+  popover with the photo's metadata, in sections. A photo with a location
+  gets **Open in Maps**, which opens the Maps app; the app itself stays
+  offline. Photos library items show PhotoKit's basic info only. Moving to
+  another photo closes it. See
+  [photo-info-implementation-plan.md](photo-info-implementation-plan.md).
 - **Counter.** Position within this year's window.
 - **Filmstrip.** Thumbnails of this year's photos. Click one to jump to it.
 - **Year controls.** Previous year, next year, and a year picker.
