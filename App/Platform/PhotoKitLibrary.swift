@@ -25,6 +25,9 @@ protocol AppPhotoLibrary: PhotoLibraryProviding {
     /// tell whether a library package is the system library. Call only
     /// with access granted; never asks for it.
     func countAssets(withLocalIdentifiers localIdentifiers: [String]) async -> Int
+    /// What PhotoKit knows about one asset without reading its file, for
+    /// the Photo Info popover. Nil if the asset is gone or access is off.
+    func details(forAssetID assetID: String) async -> LibraryAssetDetails?
 }
 
 /// An active change observation. `stop()` runs off the main thread.
@@ -66,6 +69,31 @@ struct PhotoKitLibrary: AppPhotoLibrary {
     func countAssets(withLocalIdentifiers localIdentifiers: [String]) async -> Int {
         guard await accessGranted(), !localIdentifiers.isEmpty else { return 0 }
         return PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil).count
+    }
+
+    @concurrent
+    func details(forAssetID assetID: String) async -> LibraryAssetDetails? {
+        guard await accessGranted(),
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject
+        else { return nil }
+        let subtypes: [(PHAssetMediaSubtype, String)] = [
+            (.photoLive, "Live Photo"), (.photoPanorama, "Panorama"), (.photoHDR, "HDR"),
+            (.photoScreenshot, "Screenshot"), (.photoDepthEffect, "Portrait"),
+        ]
+        var kinds = subtypes.filter { asset.mediaSubtypes.contains($0.0) }.map(\.1)
+        if asset.representsBurst { kinds.append("Burst") }
+        // CLLocation marks unknown values with negative accuracies or values.
+        let location = asset.location.map { place in
+            LibraryAssetDetails.Location(
+                latitude: place.coordinate.latitude, longitude: place.coordinate.longitude,
+                altitude: place.verticalAccuracy >= 0 ? place.altitude : nil,
+                course: place.course >= 0 ? place.course : nil,
+                speed: place.speed >= 0 ? place.speed : nil,
+                accuracy: place.horizontalAccuracy >= 0 ? place.horizontalAccuracy : nil)
+        }
+        return LibraryAssetDetails(created: asset.creationDate, modified: asset.modificationDate,
+                                   pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight,
+                                   kinds: kinds, isFavorite: asset.isFavorite, location: location)
     }
 
     /// Opens System Settings at Privacy & Security › Photos.
@@ -324,6 +352,15 @@ final class SlowFakePhotoLibrary: AppPhotoLibrary, @unchecked Sendable {
     @concurrent func accessGranted() async -> Bool { true }
     @concurrent func requestAccess() async -> Bool { true }
     @concurrent func countAssets(withLocalIdentifiers localIdentifiers: [String]) async -> Int { 0 }
+
+    /// Made-up details, so the popover can be tried without a real library.
+    @concurrent
+    func details(forAssetID assetID: String) async -> LibraryAssetDetails? {
+        waitForOpen()
+        return LibraryAssetDetails(created: Date(timeIntervalSince1970: 1_762_160_400), modified: nil,
+                                   pixelWidth: 4032, pixelHeight: 3024, kinds: ["Live Photo"],
+                                   location: .init(latitude: 51.5007, longitude: -0.1246, accuracy: 10))
+    }
 
     @concurrent
     func startObservingChanges(_ handler: @escaping @Sendable (LibraryChange) -> Void) async -> LibraryObservation? {

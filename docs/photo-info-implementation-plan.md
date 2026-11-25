@@ -1,6 +1,6 @@
 # Plan: Photo Info Popover
 
-Status: step 4.1 done; 4.2 and 4.3 to do.
+Status: steps 4.1 and 4.2 done; 4.3 to do.
 Trigger: users want to see a photo's EXIF data, and where it was taken.
 
 ## 1. Goal
@@ -82,7 +82,14 @@ details:
    - an image with no metadata;
    - skipped binary values.
 
-### 4.2 App: Photos Library items (to do)
+### 4.2 App: Photos Library items (done)
+
+Built as `LibraryAssetDetails` and `PhotoInfo.libraryItem` in the core, so
+the formatting is unit-tested. The app's `details(forAssetID:)` fills the
+details from the `PHAsset`. It never asks for access. Kinds shown: Live
+Photo, Panorama, HDR, Screenshot, Portrait, and Burst; Favorite shows when
+set. The original file name shows when the index has it. The debug fake
+library returns made-up details.
 
 1. **Basic info.** Build a `PhotoInfo` from the `PHAsset`: creation and
    modification dates, pixel size, media subtypes (Live Photo, screenshot,

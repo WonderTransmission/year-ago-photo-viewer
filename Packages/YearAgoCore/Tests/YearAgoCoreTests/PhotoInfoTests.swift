@@ -198,6 +198,45 @@ import Testing
         #expect(Coordinate(latitude: 91, longitude: 0) == nil)
     }
 
+    // MARK: Photos library items
+
+    @Test func libraryItemShowsBasicInfoAndNote() throws {
+        let created = Date(timeIntervalSince1970: TimeInterval(local(2025, 11, 3, 9).seconds))
+        let details = LibraryAssetDetails(
+            created: created, modified: created.addingTimeInterval(3600),
+            pixelWidth: 4032, pixelHeight: 3024, kinds: ["Live Photo", "HDR"], isFavorite: true,
+            fileName: "IMG_0001.HEIC",
+            location: .init(latitude: -33.8688, longitude: 151.2093, altitude: 12.5, course: 90,
+                            speed: 2, accuracy: 4.7))
+        let tokyo = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        let info = PhotoInfo.libraryItem(details, timeZone: tokyo)
+
+        #expect(info.sections.map(\.title) == ["Image", "Dates", "Location"])
+        #expect(info.value("File name") == "IMG_0001.HEIC")
+        #expect(info.value("Size") == "4032 × 3024 pixels")
+        #expect(info.value("Kind") == "Live Photo, HDR")
+        #expect(info.value("Favorite") == "Yes")
+        #expect(info.value("Taken") == "2025-11-03 18:00:00 +09:00")
+        #expect(info.value("Modified") == "2025-11-03 19:00:00 +09:00")
+        #expect(info.value("Coordinates") == "33.86880° S, 151.20930° E")
+        #expect(info.value("Altitude") == "12.5 m")
+        #expect(info.value("Direction") == "90° (true north)")
+        #expect(info.value("Speed") == "7.2 km/h")
+        #expect(info.value("Accuracy") == "± 4.7 m")
+        #expect(info.coordinate?.latitude == -33.8688)
+        #expect(info.note == PhotoInfo.libraryNote)
+    }
+
+    @Test func libraryItemWithoutLocationOrExtras() {
+        let details = LibraryAssetDetails(created: nil, modified: nil, pixelWidth: 100, pixelHeight: 50)
+        let info = PhotoInfo.libraryItem(details)
+        #expect(info.sections.map(\.title) == ["Image"])
+        #expect(info.value("Kind") == nil)
+        #expect(info.value("Favorite") == nil)
+        #expect(info.coordinate == nil)
+        #expect(info.note == PhotoInfo.libraryNote)
+    }
+
     // MARK: Files
 
     @Test func readsAGeneratedFile() throws {
