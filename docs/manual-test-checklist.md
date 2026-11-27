@@ -112,6 +112,26 @@ possible, one on an external drive.
   allowed, add the system library's file. The app says it's the same
   library. The new row is named "… (File)". Each photo shows once.
 
+## Oldest-first navigation
+
+Use folders with photos from several years around today's date.
+
+- [ ] **Labels.** The year bar says **◀◀ Later Year** and **Earlier Year
+  ▶▶**. Hovering shows the target year and key.
+- [ ] **Oldest first.** Click ⇆. The buttons swap to **◀◀ Earlier Year** and
+  **Later Year ▶▶**; the year doesn't change. **View › Oldest Years First**
+  and **Settings › Start with the oldest year** follow.
+- [ ] **Launch.** With oldest first on, quit and relaunch: it opens at the
+  oldest year with photos. With it off: at 1 year ago.
+- [ ] **Keys.** ⌘[ and ⌘] press the left and right year buttons in both
+  modes.
+- [ ] **Jumps.** The year menu's **Oldest Year** and **Most Recent Year**
+  work, and are disabled when already there. ⇧⌘] jumps to the far end in
+  the direction of travel; ⇧⌘[ to the start.
+- [ ] **End card.** It offers the next year in the direction of travel.
+- [ ] **Across years.** → on the end card opens the next year with photos.
+  ← on a year's first photo goes back to the previous year's end card.
+
 ## Photo info
 
 - [ ] **Open and close.** ⓘ in the caption, or ⌘I, opens Photo Info. ⌘I

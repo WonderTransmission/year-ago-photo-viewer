@@ -1,6 +1,6 @@
 # Plan: Oldest-First Navigation
 
-Status: steps 4.1–4.4 done (manual checks pending); 4.5 to do.
+Status: done (steps 4.1–4.5).
 Trigger: it's easy to step back from last year, one year at a time, but
 hard to start at the oldest photos and move forward in time.
 
@@ -139,7 +139,8 @@ crossing years without a keyboard.
 Seen working on made-up photos (2012–2025): oldest first opens at 2012
 with Earlier Year disabled; three → presses go photo, end card, then 2015;
 newest first opens at 2025 with Later Year disabled and Earlier Year on
-the right.
+the right. Checked by hand (2026-11-26): the toggle in all three places,
+⌘[ / ⌘], the jumps and ⇧⌘[ / ⇧⌘], ← retracing →, and the end card.
 
 1. **→ on the end card.** Opens the next year in the direction of travel,
    at its first photo. At the last year, nothing happens.
@@ -153,7 +154,7 @@ the right.
 5. **Photo Info.** Changing year this way closes Photo Info, as any photo
    change does.
 
-### 4.5 Docs (to do)
+### 4.5 Docs (done)
 
 - **README.** "Using it": the new labels, jumps, the setting, and arrows
   that carry on into the next year.

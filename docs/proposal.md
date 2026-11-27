@@ -8,8 +8,9 @@ Target platform: macOS 26 (Tahoe), Apple silicon
 
 Year Ago Photo Viewer is a small native macOS app. It shows the photos you took
 around this time in past years. Open it, and you step through last year's
-photos from the past week. Press "Next year", and you step through the same
-week two years ago, then three.
+photos from the past week. Press "Earlier year", and you step through the
+same week two years ago, then three. Or start at the oldest year and travel
+forward in time (section 4.3).
 
 The app reads photos from one or more sources at once:
 
@@ -86,8 +87,8 @@ Some years have no photos in the window. A setting controls what happens:
 - **Setting.** A checkbox: "Show years with no photos". It is on by default.
 - **On.** Every year from 1 to N appears. An empty year shows an empty panel
   with the usual header, such as "6 years ago · 1–8 Nov 2020 · No photos".
-  "Next year" moves to it like any other year.
-- **Off.** Empty years are skipped. "Previous year" and "Next year" jump to
+  "Earlier year" moves to it like any other year.
+- **Off.** Empty years are skipped. "Earlier year" and "Later year" jump to
   the nearest year with photos. The year picker hides empty years.
 
 The checkbox lives in Settings and in the View menu. Changing it applies at
@@ -100,25 +101,36 @@ year with photos. If no year has photos, the app shows the empty panel anyway.
 
 Navigation has two levels: photos within a year, and years.
 
-**Within a year.** The app opens at N = 1 on the first photo in the window.
-The user steps through the photos in date order:
+**Within a year.** The app opens on the first photo in a year's window: at
+N = 1, or with oldest years first, at the oldest year with photos. The user
+steps through the photos in date order:
 
 - **Keys.** Left and right arrow keys.
 - **Buttons.** "Previous photo" and "Next photo" on screen.
 - **Position.** A counter shows progress, such as "12 of 37".
 
-Stepping never crosses into another year. After the last photo, the app shows
-an end card. The card offers a "Next year" button.
+After the last photo, the app shows an end card. The card offers the next
+year in the direction of travel. → on the end card opens the next year with
+photos; ← on a year's first photo returns to the previous year's end card.
 
-**Between years.** Only an explicit action changes the year:
+**Direction.** "Oldest years first" (View menu, Settings, and a ⇆ button in
+the year bar) chooses where travel starts and which way it goes. It's off by
+default. Changing it doesn't move the viewer.
 
-- **Buttons.** "Previous year" and "Next year" in the toolbar.
-- **Keys.** ⌘[ and ⌘].
-- **Picker.** A menu that lists the years. Empty years appear with
-  "(no photos)" or are hidden, per section 4.2.1.
+**Between years.**
+
+- **Buttons.** "Earlier year" and "Later year" in the year bar. The
+  right-hand one always goes forward in the direction of travel.
+- **Keys.** ⌘[ and ⌘] press the left and right buttons. ⇧⌘] jumps to the
+  far end in the direction of travel, and ⇧⌘[ to the start.
+- **Picker.** A menu that starts with "Oldest year" and "Most recent year",
+  then lists the years in travel order. Empty years appear with
+  "(no photos)" or are hidden, per section 4.2.1. The jumps always land on a
+  year with photos.
 
 Changing the year opens that year's window at its first photo. An empty year
-opens the empty panel.
+opens the empty panel. See
+[oldest-first-navigation-implementation-plan.md](oldest-first-navigation-implementation-plan.md).
 
 The header always shows the year both ways, for example:
 **"2 years ago · 1–8 Nov 2024 · 12 of 37"**.
@@ -256,7 +268,7 @@ One main window, built in SwiftUI. The current photo fills most of it.
 ┌───────────────────────────────────────────────────────────────────┐
 │ [Sources: 3 ▾] [Default date: EXIF ▾] [Window: 1 week ▾]          │
 │                                                                   │
-│ ◀◀ Prev year   2 years ago · 1–8 Nov 2024   [Year ▾] Next year ▶▶ │
+│ ◀◀ Later year  2 years ago · 1–8 Nov 2024   ⇆ [Year ▾] Earlier ▶▶ │
 ├───────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │                                                                   │
@@ -280,9 +292,11 @@ One main window, built in SwiftUI. The current photo fills most of it.
   [photo-info-implementation-plan.md](photo-info-implementation-plan.md).
 - **Counter.** Position within this year's window.
 - **Filmstrip.** Thumbnails of this year's photos. Click one to jump to it.
-- **Year controls.** Previous year, next year, and a year picker.
-- **End card.** After the last photo: "That's all for 2024" and a
-  "Next year" button.
+- **Year controls.** Later year and earlier year (sides follow the
+  direction of travel), the ⇆ direction toggle, and a year picker.
+- **End card.** After the last photo: "That's all for 2024" and a button
+  for the next year in the direction of travel, such as "Earlier year:
+  2023".
 - **Sources button.** Shows how many sources are enabled. Opens the Sources
   panel.
 - **Default date menu.** The four date sources. Sets the default for new
@@ -290,7 +304,8 @@ One main window, built in SwiftUI. The current photo fills most of it.
 - **Window menu.** 1 to 6 weeks.
 - **Empty panel.** Shown for a year with no photos, when empty years are
   shown. It reads "No photos from 1–8 Nov 2019". It keeps the year controls
-  and offers a "Next year" button. The filmstrip is hidden.
+  and offers the next year in the direction of travel. The filmstrip is
+  hidden.
 - **Empty years setting.** "Show years with no photos" checkbox. See 4.2.1.
 - **Progress.** A progress bar during the first scan of a large folder.
 
@@ -481,8 +496,9 @@ The code will be public. These rules keep personal data out:
 - **Multiple sources.** Photos from all enabled sources merge in date order.
   Each source uses its own date source. Disabled and offline sources are
   skipped.
-- **Navigation.** Stepping stops at the end card and never changes the year.
-- **Empty years.** With the setting on, "Next year" lands on empty years.
+- **Navigation.** Year moves in both directions, the start year, and the
+  ends skip empty years where they should.
+- **Empty years.** With the setting on, "Earlier year" lands on empty years.
   With it off, it skips them. The all-empty case still shows a panel.
 - **Widget snapshot.** The manifest and thumbnails match the chosen window.
 - **Indexer.** Incremental rescans after add, change, and delete.

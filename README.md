@@ -2,7 +2,8 @@
 
 A small macOS app that shows the photos you took around this time in past
 years. Open it to step through last year's photos from the past week. Press
-**Next Year** to see the same week two years ago, then three.
+**Earlier Year** to see the same week two years ago, then three. Or start at
+your oldest photos and travel forward in time.
 
 ![The viewer showing photos from one year ago](docs/images/viewer.png)
 
@@ -87,8 +88,13 @@ App Groups need a development team, so:
 2. **Step through photos.** Use ← and →, the arrow buttons, or the filmstrip.
 3. **Zoom.** Pinch, double-click, or use ⌘= / ⌘- / ⌘0. Drag to look around.
    Moving to another photo returns to fit.
-4. **Change year.** Use **Next Year** / **Previous Year**, ⌘] / ⌘[, or the
-   year menu.
+4. **Change year.** Use **Earlier Year** / **Later Year**, ⌘[ / ⌘], or the
+   year menu. The year menu also jumps to the **Oldest Year** or **Most
+   Recent Year** (⇧⌘[ / ⇧⌘]). On a year's last photo, → carries on into the
+   next year.
+   - **Oldest first.** Click ⇆ in the year bar (or **View › Oldest Years
+     First**) to start at your oldest photos and go forward in time. The
+     right-hand button and ⌘] always move in your direction of travel.
 5. **Photo info.** Click ⓘ in the caption bar, or press ⌘I. Moving to another
    photo closes it. **Open in Maps** shows where the photo was taken. Photos
    library items show basic info only.
