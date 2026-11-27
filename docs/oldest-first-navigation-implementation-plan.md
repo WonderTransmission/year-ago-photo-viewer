@@ -1,6 +1,6 @@
 # Plan: Oldest-First Navigation
 
-Status: proposed; step 4.1 to do.
+Status: step 4.1 done; 4.2–4.5 to do.
 Trigger: it's easy to step back from last year, one year at a time, but
 hard to start at the oldest photos and move forward in time.
 
@@ -53,7 +53,13 @@ as easily as they travel back today.
 
 ## 4. Work plan
 
-### 4.1 Core: direction-aware navigation (to do)
+### 4.1 Core: direction-aware navigation (done)
+
+Built in `Window/YearDirection.swift` as an extension on `YearNavigator`,
+with `YearDirection` and the moves listed below. `next(after:)` and
+`previous(before:)` stay unchanged; `earlier(than:)` and `later(than:)`
+wrap them. `start(direction:)` and `end(direction:)` name the two ends in
+travel order, for the jump shortcuts.
 
 1. **Direction.** Add `YearDirection` with two cases: `.newestFirst`
    (today) and `.oldestFirst`.
