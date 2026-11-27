@@ -1,6 +1,6 @@
 # Plan: Oldest-First Navigation
 
-Status: done (steps 4.1–4.5).
+Status: done and released in 1.6 (steps 4.1–4.5).
 Trigger: it's easy to step back from last year, one year at a time, but
 hard to start at the oldest photos and move forward in time.
 
