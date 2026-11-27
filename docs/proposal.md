@@ -1,6 +1,7 @@
 # Proposal: Year Ago Photo Viewer
 
-Status: Draft 6 — ready for review
+Status: approved and built. Kept up to date with the app; each later
+feature also has its own plan in `docs/`.
 License: MIT, © WonderTransmission
 Target platform: macOS 26 (Tahoe), Apple silicon
 
@@ -52,7 +53,8 @@ repo will contain no personal data.
 - **Video.** The app ignores videos. Live Photos show their still key frame.
 - **Date fallbacks.** A photo without the chosen date is ignored.
 - **iOS or iPadOS.** macOS only.
-- **App Store release.** Users build from source.
+- **App Store release.** Users build from source, or download an unsigned
+  DMG from the GitHub releases.
 
 ## 4. Core concepts
 
@@ -95,7 +97,9 @@ The checkbox lives in Settings and in the View menu. Changing it applies at
 once.
 
 If the setting is off and N = 1 is empty, the app opens at the nearest
-year with photos. If no year has photos, the app shows the empty panel anyway.
+year with photos. (With oldest years first, it opens at the oldest year with
+photos; see 4.3.) If no year has photos, the app shows the empty panel
+anyway.
 
 ### 4.3 Navigation
 
@@ -161,6 +165,8 @@ Notes:
   a tooltip.
 - **Missing dates.** Some photos lack the chosen date, such as a PNG with no
   EXIF. The app ignores them. There is no fallback to another date source.
+- **Photos library files.** They use the Folder column, except File name,
+  which isn't offered: Photos stores originals under ID names.
 
 ### 4.5 File name patterns
 
@@ -282,7 +288,9 @@ One main window, built in SwiftUI. The current photo fills most of it.
 ```
 
 - **Photo.** The current photo, scaled to fit.
-- **Photo arrows.** Step to the previous or next photo in this year.
+- **Photo arrows.** Step to the previous or next photo. From the end card,
+  → opens the next year with photos; from a year's first photo, ← returns
+  to the previous year's end card.
 - **Caption.** The photo's date, and the name of its photo source.
 - **Photo info.** An ⓘ button at the end of the caption (or ⌘I) opens a
   popover with the photo's metadata, in sections. A photo with a location
@@ -307,6 +315,8 @@ One main window, built in SwiftUI. The current photo fills most of it.
   and offers the next year in the direction of travel. The filmstrip is
   hidden.
 - **Empty years setting.** "Show years with no photos" checkbox. See 4.2.1.
+- **Direction setting.** "Oldest years first", in Settings, the View menu,
+  and the ⇆ button. See 4.3.
 - **Progress.** A progress bar during the first scan of a large folder.
 
 All settings persist between launches.
@@ -324,14 +334,14 @@ A sheet that lists every photo source:
 │ ☑  Screenshots               Date: [File name ▾]  2,950 ⟳    │
 │ ☐  Old Backup Drive          Date: [Modified ▾]  offline     │
 ├──────────────────────────────────────────────────────────────┤
-│ [+ Add Folder…]  [+ Add Photos Library]  [− Remove]          │
+│ [+ Folder…] [+ Photos Library] [+ Library File…] [− Remove]  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 - **Checkbox.** Enables or disables a source without removing it.
 - **Name.** The folder name by default. The user can rename it.
-- **Date menu.** The date source for this source. Options that do not apply
-  are dimmed.
+- **Date menu.** The date source for this source. Options that don't apply
+  are left out.
 - **Status.** Photo count, scanning progress, or "offline".
 - **Offline.** A folder on an unplugged drive is skipped until it returns.
   Its index is kept.
@@ -346,8 +356,9 @@ A sheet that lists every photo source:
 A small "On this day" item lives in the menu bar. Users can turn it off in
 Settings.
 
-- **Icon.** A small calendar or photo glyph.
-- **Popover.** Shows one photo from 1 year ago, in the current window.
+- **Icon.** A clock-arrow glyph.
+- **Popover.** Shows one photo from 1 year ago, in the current window. The
+  "Oldest years first" setting doesn't change this.
 - **Shuffle.** A button picks another photo from the same window.
 - **Summary.** A line such as "37 photos from 1–8 Nov 2025".
 - **Open.** A button opens the main window at that photo.
@@ -389,7 +400,8 @@ the snapshot with its date.
 - **Widget.** WidgetKit extension, sharing data through an App Group.
 - **Hashing.** CryptoKit SHA-256 for duplicate detection.
 - **Images.** ImageIO for EXIF and thumbnails. PhotoKit for the Photos library.
-- **Persistence.** SwiftData or SQLite for the photo index.
+- **Persistence.** SQLite for the photo index, through a small wrapper in
+  the core package.
 - **Build.** Xcode project with a separate Swift package for core logic.
 - **Dependencies.** None beyond Apple frameworks.
 
@@ -397,21 +409,27 @@ the snapshot with its date.
 
 ```
 App (SwiftUI)
- ├── ViewerModel        current N, W, merged photo list
- ├── SourceRegistry     list of sources, enabled flags, per-source date source
- ├── PhotoSource        protocol
- │    ├── FolderSource       walks folders, reads file and EXIF dates
- │    └── PhotosLibrarySource PhotoKit queries
- ├── DateExtractor      file name, modified, created, EXIF
- ├── PhotoGrouper       RAW+JPEG and HEIC+MOV pairing
- ├── Deduplicator       size grouping, SHA-256, cross-source heuristic
- ├── PhotoIndex         cached dates, hashes, and groups per source
- ├── WindowCalculator   N, W, today → date range
- ├── ThumbnailLoader    async, cached thumbnails
- └── WidgetSnapshotter  writes daily thumbnails to the App Group
+ ├── Model/       ViewerModel (year, window, photos, navigation, syncing),
+ │                SettingsStore
+ ├── Views/       viewer, filmstrip, Sources panel, Photo Info, Settings
+ ├── MenuBar/     the "On This Day" popover
+ └── Platform/    PhotoKitLibrary (PhotoKit access, changes, images),
+                  FolderAccess (bookmarks), FolderWatcher (FSEvents),
+                  WidgetSnapshotter (App Group snapshot)
 
-MenuBarExtra (SwiftUI)  reads ViewerModel
-Widget extension        reads the App Group snapshot only
+YearAgoCore (Swift package, no UI)
+ ├── Window/      WindowCalculator, YearNavigator, YearDirection
+ ├── Dates/       file name, file, and EXIF date readers
+ ├── Scanning/    FolderScanner, PhotosLibraryPackage
+ ├── Index/       PhotoIndex on SQLite: sources, photos, sync, duplicates
+ ├── Grouping/    RAW+JPEG pairs
+ ├── Dedup/       content hashing, union-find grouping
+ ├── Imaging/     image loading, PhotoInfo metadata
+ ├── Library/     PhotoItem, PhotoTimeline, PhotoLibraryProviding
+ └── Viewer/      photo stepping, zoom, On This Day
+YearAgoSnapshot   snapshot format shared by the app and the widget
+
+Widget extension  reads the App Group snapshot only
 ```
 
 Core logic lives in a Swift package, `YearAgoCore`. It has no UI code. Unit
@@ -428,22 +446,22 @@ reuses it:
    needs no rescan.
 3. Pair RAW files with their JPEG or HEIC partners.
 4. Hash files that share a size, and mark duplicates.
-5. Store the index in Application Support, keyed by folder.
+5. Store the index in one SQLite file in Application Support.
 6. On later launches, re-read only files whose size or modified date changed.
 7. Watch the folder with FSEvents to pick up changes while the app runs.
 
 Queries then run against the index, not the disk.
 
-Each folder source has its own index. Duplicate detection runs across all
-indexes. Disabling a source keeps its index, so re-enabling it is instant.
-Removing a source deletes its index.
+Each source has its own rows in the index. Duplicate detection runs across
+all sources. Disabling a source keeps its rows, so re-enabling it is
+instant. Removing a source deletes its rows.
 
 ### 6.4 Photos library
 
-PhotoKit can filter by `creationDate` directly. The app needs no index for the
-Created and EXIF date sources. The File name source needs each asset's
-original file name. Fetching that is slow, so the app caches it like a folder
-index.
+The app indexes the library's image assets like a folder's files: dates and
+pixel sizes, read through PhotoKit. Original file names are slow to fetch,
+so it fetches them only when a source uses the File name date, and caches
+them. Photos' change notifications update the index without a full rescan.
 
 **Other libraries.** PhotoKit only reads the system library. Any other
 `.photoslibrary` is read as files: only its originals folders, indexed like a
@@ -461,7 +479,8 @@ for the trade-offs.
 - **Photos library files.** Picked with an open panel and bookmarked, like
   folders. No Photos access is needed.
 - **App Group.** Shared by the app and the widget, for snapshots only.
-- **Network.** No network entitlement.
+- **Network.** No network entitlement. **Open in Maps** hands a photo's
+  coordinates to the Maps app, which does any network access.
 
 ## 7. Privacy and the public repo
 
@@ -523,21 +542,23 @@ The code will be public. These rules keep personal data out:
 | # | Topic             | Decision                                                  |
 |---|-------------------|-----------------------------------------------------------|
 | 1 | Window direction  | The W weeks before the date N years ago, inclusive.       |
-| 2 | Navigation        | Step through one year's photos. Change year only on an explicit action. |
+| 2 | Navigation        | Step through one year's photos. Change year with a year control, or → on the end card. |
 | 3 | Missing dates     | Ignore photos that lack the chosen date. No fallback.     |
 | 4 | Video             | Ignore videos.                                            |
 | 5 | Live Photos       | Show the still key frame.                                 |
-| 6 | Duplicates        | Hide them. Exact matches only in v1.                      |
+| 6 | Duplicates        | Hide them: exact matches, plus library photos matched by capture time or asset ID. |
 | 7 | RAW               | Show RAW files. Pair `IMG_1234.CR2` with `IMG_1234.JPG`.  |
 | 8 | On this day       | Add a menu bar item and a widget.                         |
 | 9 | License           | MIT.                                                      |
 | 10 | App name         | Year Ago Photo Viewer.                                    |
 | 11 | Empty years      | Show with an empty panel. A checkbox can hide them. On by default. |
 | 12 | Photos modified date | Offered, though of limited use.                       |
-| 13 | Sources          | Multiple sources at once: Photos plus any number of folders. |
+| 13 | Sources          | Multiple sources at once: Photos, library files, and any number of folders. |
 | 14 | Copyright holder | WonderTransmission.                                       |
 | 15 | Duplicate winner | Earliest date wins. Ties go to shortest path, then alphabetical. |
 | 16 | Date setting     | Per source. The toolbar sets the default for new sources. |
+| 17 | Direction        | Newest years first by default; "Oldest years first" is a setting. |
+| 18 | Photo info       | A popover; Open in Maps instead of an in-app map, so the app stays offline. |
 
 ## 11. Open questions
 

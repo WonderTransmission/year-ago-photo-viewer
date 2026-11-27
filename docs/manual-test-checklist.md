@@ -1,8 +1,8 @@
 # Manual Test Checklist
 
 Unit tests cover the core logic. These checks cover what tests can't reach:
-the real Photos library, permissions, drives, the menu bar item, and the
-widget. Run them before a release.
+the real Photos library and library files, permissions, drives, the app's
+controls, the menu bar item, and the widget. Run them before a release.
 
 Tip: copy the boxes into a release issue and tick them there.
 
@@ -151,7 +151,9 @@ Use folders with photos from several years around today's date.
 ## Menu bar item (M9)
 
 - [ ] **Shown by default.** A clock-arrow icon appears in the menu bar.
-  Clicking it shows "On This Day" with one photo from the viewer's first year.
+  Clicking it shows "On This Day" with one photo from a year ago (or the
+  nearest year with photos, when empty years are hidden). "Oldest Years
+  First" doesn't change this.
 - [ ] **Shuffle.** Shuffle shows a different photo from the same week. It is
   disabled when the week has fewer than two photos.
 - [ ] **Open in Viewer.** Opens the main window at that photo and closes the

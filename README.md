@@ -88,19 +88,22 @@ App Groups need a development team, so:
 2. **Step through photos.** Use ← and →, the arrow buttons, or the filmstrip.
 3. **Zoom.** Pinch, double-click, or use ⌘= / ⌘- / ⌘0. Drag to look around.
    Moving to another photo returns to fit.
-4. **Change year.** Use **Earlier Year** / **Later Year**, ⌘[ / ⌘], or the
-   year menu. The year menu also jumps to the **Oldest Year** or **Most
-   Recent Year** (⇧⌘[ / ⇧⌘]). On a year's last photo, → carries on into the
-   next year.
-   - **Oldest first.** Click ⇆ in the year bar (or **View › Oldest Years
-     First**) to start at your oldest photos and go forward in time. The
-     right-hand button and ⌘] always move in your direction of travel.
+4. **Change year.** Click **Earlier Year** or **Later Year**, or pick a year
+   from the year menu. ⌘[ and ⌘] press the left and right year buttons.
+   - **Jumps.** The year menu and Go menu jump to the **Oldest Year** or the
+     **Most Recent Year**. ⇧⌘] jumps to the far end in your direction of
+     travel, and ⇧⌘[ back to the start.
+   - **Across years.** After a year's last photo, → carries on into the next
+     year with photos. On a year's first photo, ← goes back a year.
+   - **Oldest first.** Click ⇆ in the year bar, or choose **View › Oldest
+     Years First**, to start at your oldest photos and go forward in time.
+     The right-hand button and ⌘] always move in your direction of travel.
 5. **Photo info.** Click ⓘ in the caption bar, or press ⌘I. Moving to another
    photo closes it. **Open in Maps** shows where the photo was taken. Photos
    library items show basic info only.
 6. **Adjust.** Pick the window length (1–6 weeks) in the toolbar. In
-   **Settings** (⌘,) choose whether to show years with no photos, and
-   whether to show the menu bar item.
+   **Settings** (⌘,) choose whether to show years with no photos, whether
+   to start with the oldest year, and whether to show the menu bar item.
 
 Each source has its own date setting in the Sources panel. The toolbar's
 **Default date** applies to new sources, and can apply to all at once.
@@ -179,7 +182,7 @@ Scripts/check-privacy.sh
 | `Widget/` | The WidgetKit extension |
 | `Packages/YearAgoCore/Sources/YearAgoSnapshot/` | Snapshot format shared by the app and widget |
 | `Scripts/` | Icon generator, release DMG builder, and privacy check |
-| `docs/` | Proposal, implementation plan, checklist, screenshots |
+| `docs/` | Proposal, implementation plans, checklist, screenshots |
 
 The screenshots use generated sample images, not real photos.
 

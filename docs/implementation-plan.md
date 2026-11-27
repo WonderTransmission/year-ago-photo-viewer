@@ -1,7 +1,9 @@
 # Implementation Plan: Year Ago Photo Viewer
 
-Status: Draft 1
-Companion to: [proposal.md](proposal.md) (Draft 6)
+Status: done. M0–M10 shipped in 1.0–1.2. Kept as a record; later work has
+its own plans in `docs/`, and milestones were merged locally rather than
+through pull requests.
+Companion to: [proposal.md](proposal.md)
 
 ## 1. Overview
 
