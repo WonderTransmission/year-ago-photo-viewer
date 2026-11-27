@@ -54,6 +54,7 @@ private struct ViewerCommands: Commands {
         }
 
         CommandGroup(after: .toolbar) {
+            Toggle("Oldest Years First", isOn: $model.oldestYearsFirst)
             Toggle("Show Years with No Photos", isOn: $model.showEmptyYears)
             Picker("Window Length", selection: $model.weeks) {
                 ForEach(WindowCalculator.allowedWeeks, id: \.self) { weeks in
@@ -86,16 +87,26 @@ private struct ViewerCommands: Commands {
             // Arrow keys also work in the window; these menu items document
             // them without stealing arrows from text fields.
             Button("Previous Photo") { model.previousPhoto() }
-                .disabled(!model.stepper.canGoBack)
+                .disabled(!model.canStepBack)
             Button("Next Photo") { model.nextPhoto() }
-                .disabled(!model.stepper.canGoForward)
+                .disabled(!model.canStepForward)
             Divider()
-            Button("Previous Year") { model.goToPreviousYear() }
+            // ⌘[ and ⌘] press the left and right year buttons, whose labels
+            // depend on the direction of travel.
+            Button(model.backYearLabel) { model.goBackYear() }
                 .keyboardShortcut("[")
-                .disabled(model.previousYear == nil)
-            Button("Next Year") { model.goToNextYear() }
+                .disabled(model.backYear == nil)
+            Button(model.forwardYearLabel) { model.goForwardYear() }
                 .keyboardShortcut("]")
-                .disabled(model.nextYear == nil)
+                .disabled(model.forwardYear == nil)
+            Divider()
+            // ⇧⌘] jumps to the far end in the direction of travel, ⇧⌘[ to the start.
+            Button("Oldest Year") { model.goToOldestYear() }
+                .keyboardShortcut(model.forwardIsEarlier ? "]" : "[", modifiers: [.command, .shift])
+                .disabled(model.oldestYear == nil || model.oldestYear == model.yearsAgo)
+            Button("Most Recent Year") { model.goToMostRecentYear() }
+                .keyboardShortcut(model.forwardIsEarlier ? "[" : "]", modifiers: [.command, .shift])
+                .disabled(model.mostRecentYear == nil || model.mostRecentYear == model.yearsAgo)
         }
     }
 }

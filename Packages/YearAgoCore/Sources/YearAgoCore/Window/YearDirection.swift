@@ -30,6 +30,20 @@ extension YearNavigator {
         direction == .newestFirst ? later(than: yearsAgo) : earlier(than: yearsAgo)
     }
 
+    /// The next year with photos onward in the direction of travel,
+    /// skipping empty years. For arrow keys that carry on past a year's end.
+    public func forwardWithPhotos(from yearsAgo: Int, direction: YearDirection) -> Int? {
+        direction == .newestFirst ? yearsWithPhotos.first { $0 > yearsAgo }
+                                  : yearsWithPhotos.last { $0 < yearsAgo }
+    }
+
+    /// The previous year with photos against the direction of travel,
+    /// skipping empty years.
+    public func backWithPhotos(from yearsAgo: Int, direction: YearDirection) -> Int? {
+        direction == .newestFirst ? yearsWithPhotos.last { $0 < yearsAgo }
+                                  : yearsWithPhotos.first { $0 > yearsAgo }
+    }
+
     /// Years with photos in their window, most recent first. Unlike
     /// `years`, never includes empty years.
     public var yearsWithPhotos: [Int] {

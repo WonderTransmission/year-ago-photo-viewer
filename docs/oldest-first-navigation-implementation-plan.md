@@ -1,6 +1,6 @@
 # Plan: Oldest-First Navigation
 
-Status: step 4.1 done; 4.2–4.5 to do.
+Status: steps 4.1–4.4 done (manual checks pending); 4.5 to do.
 Trigger: it's easy to step back from last year, one year at a time, but
 hard to start at the oldest photos and move forward in time.
 
@@ -80,7 +80,7 @@ travel order, for the jump shortcuts.
 4. **Tests.** Cover both directions, with and without empty years, at both
    ends, and with no photos at all.
 
-### 4.2 Jump to either end (to do)
+### 4.2 Jump to either end (done)
 
 1. **Year menu.** At the top: **Oldest Year (2009)** and **Most Recent Year
    (2025)**, then a divider, then the years. The years are listed in travel
@@ -91,7 +91,12 @@ travel order, for the jump shortcuts.
    is Most Recent Year.
 3. **Disabled when already there.**
 
-### 4.3 The "Oldest years first" setting (to do)
+### 4.3 The "Oldest years first" setting (done)
+
+Built as planned, with one change: the year bar button uses the
+`arrow.left.arrow.right` icon, as a toggle that's highlighted while oldest
+first is on. Travel through years is left to right, so a horizontal icon
+fits better than `arrow.up.arrow.down`.
 
 1. **Stored setting.** `SettingsStore.yearDirection`, default
    `.newestFirst`, so nothing changes for current users.
@@ -118,7 +123,23 @@ travel order, for the jump shortcuts.
    **Later Year: 2012**, in the direction of travel.
 7. **Empty panel.** Its button follows the direction too.
 
-### 4.4 Keep going with the arrow keys (to do)
+### 4.4 Keep going with the arrow keys (done)
+
+Built with two changes from the steps below:
+
+- **Empty years skipped.** → and ← cross to the next year *with photos*
+  (`forwardWithPhotos`, `backWithPhotos` in the core). Landing on an empty
+  panel would hide the arrows and stop the walk.
+- **No `moveToStart()`.** `goToYear(_:atEnd:)` opens a year at its first
+  photo or its end card, which covers both cases.
+
+`-DebugNextPhotoCount <n>` repeats `-DebugNextPhotoAfter`, to check
+crossing years without a keyboard.
+
+Seen working on made-up photos (2012–2025): oldest first opens at 2012
+with Earlier Year disabled; three → presses go photo, end card, then 2015;
+newest first opens at 2025 with Later Year disabled and Earlier Year on
+the right.
 
 1. **→ on the end card.** Opens the next year in the direction of travel,
    at its first photo. At the last year, nothing happens.

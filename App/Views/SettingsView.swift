@@ -11,6 +11,8 @@ struct SettingsView: View {
             Section {
                 WindowLengthPicker(selection: $model.weeks)
                 Toggle("Show years with no photos", isOn: $model.showEmptyYears)
+                Toggle("Start with the oldest year", isOn: $model.oldestYearsFirst)
+                    .help("Open at your oldest photos and go forward in time. Off: start a year ago and go back.")
             }
             Section {
                 Toggle("Show “On This Day” in the menu bar", isOn: $model.showMenuBarItem)

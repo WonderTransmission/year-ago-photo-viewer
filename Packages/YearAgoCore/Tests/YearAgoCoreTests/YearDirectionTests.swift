@@ -26,6 +26,18 @@ import Testing
         #expect(nav.back(from: 5, direction: .oldestFirst) == nil)
     }
 
+    @Test func arrowMovesSkipEmptyYears() {
+        let nav = YearNavigator(photoCounts: counts, showEmptyYears: true)
+        // N = 3 is empty: forward and back jump over it.
+        #expect(nav.forward(from: 2, direction: .newestFirst) == 3)
+        #expect(nav.forwardWithPhotos(from: 2, direction: .newestFirst) == 4)
+        #expect(nav.backWithPhotos(from: 4, direction: .newestFirst) == 2)
+        #expect(nav.forwardWithPhotos(from: 4, direction: .oldestFirst) == 2)
+        #expect(nav.backWithPhotos(from: 2, direction: .oldestFirst) == 4)
+        #expect(nav.forwardWithPhotos(from: 5, direction: .newestFirst) == nil)  // 6 is empty
+        #expect(nav.backWithPhotos(from: 5, direction: .oldestFirst) == nil)
+    }
+
     @Test func endsSkipEmptyYearsEvenWhenShown() {
         let nav = YearNavigator(photoCounts: counts, showEmptyYears: true)
         #expect(nav.years == [1, 2, 3, 4, 5, 6])

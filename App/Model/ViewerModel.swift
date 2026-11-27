@@ -47,6 +47,21 @@ final class ViewerModel {
         }
     }
 
+    /// Which way the viewer travels through the years. Changing it doesn't
+    /// move the viewer; it re-points the year controls.
+    var yearDirection: YearDirection {
+        didSet {
+            guard yearDirection != oldValue else { return }
+            settings.yearDirection = yearDirection
+        }
+    }
+
+    /// `yearDirection` as a switch, for toggles.
+    var oldestYearsFirst: Bool {
+        get { yearDirection == .oldestFirst }
+        set { yearDirection = newValue ? .oldestFirst : .newestFirst }
+    }
+
     /// The date setting given to newly added sources.
     var defaultDateSource: DateSourceKind {
         didSet { settings.defaultDateSource = defaultDateSource }
@@ -286,6 +301,7 @@ final class ViewerModel {
         today = launchDay
         weeks = settings.weeks
         showEmptyYears = settings.showEmptyYears
+        yearDirection = settings.yearDirection
         defaultDateSource = settings.defaultDateSource
         showMenuBarItem = settings.showMenuBarItem
         window = WindowCalculator().window(today: launchDay, yearsAgo: 1, weeks: SettingsStore().weeks)
@@ -325,17 +341,56 @@ final class ViewerModel {
         calculator.anniversary(of: today, yearsAgo: yearsAgo).components.year ?? 0
     }
 
-    var nextYear: Int? { navigator.next(after: yearsAgo) }
-    var previousYear: Int? { navigator.previous(before: yearsAgo) }
+    /// One offered year onward in the direction of travel (the right-hand
+    /// year button, ⌘]), and one year back (the left-hand one, ⌘[).
+    var forwardYear: Int? { navigator.forward(from: yearsAgo, direction: yearDirection) }
+    var backYear: Int? { navigator.back(from: yearsAgo, direction: yearDirection) }
+
+    /// True when the forward year is older than the current one: newest
+    /// first. Picks "Earlier Year" or "Later Year" for each button.
+    var forwardIsEarlier: Bool { yearDirection == .newestFirst }
+
+    /// Calendar words for the two year buttons: the left-hand (back) and
+    /// right-hand (forward) one.
+    var backYearLabel: String { forwardIsEarlier ? "Later Year" : "Earlier Year" }
+    var forwardYearLabel: String { forwardIsEarlier ? "Earlier Year" : "Later Year" }
+
+    /// The two ends, oldest and most recent year with photos.
+    var oldestYear: Int? { navigator.oldestWithPhotos }
+    var mostRecentYear: Int? { navigator.newestWithPhotos }
+
+    /// The arrow keys and buttons also cross into the next year with
+    /// photos: → on the end card, ← on the first photo.
+    var canStepForward: Bool {
+        stepper.canGoForward
+            || (stepper.isAtEnd && navigator.forwardWithPhotos(from: yearsAgo, direction: yearDirection) != nil)
+    }
+
+    var canStepBack: Bool {
+        stepper.canGoBack
+            || (!stepper.isEmpty && navigator.backWithPhotos(from: yearsAgo, direction: yearDirection) != nil)
+    }
 
     // MARK: Photo and year navigation
 
+    /// The next photo; from the end card, the next year with photos.
     func nextPhoto() {
+        if stepper.isAtEnd, let year = navigator.forwardWithPhotos(from: yearsAgo, direction: yearDirection) {
+            goToYear(year)
+            return
+        }
         stepper.next()
         prefetch()
     }
 
+    /// The previous photo; from the first photo, the previous year with
+    /// photos, at its end card, so ← retraces →.
     func previousPhoto() {
+        if !stepper.isEmpty, stepper.position == 0,
+           let year = navigator.backWithPhotos(from: yearsAgo, direction: yearDirection) {
+            goToYear(year, atEnd: true)
+            return
+        }
         stepper.previous()
     }
 
@@ -344,19 +399,29 @@ final class ViewerModel {
         prefetch()
     }
 
-    func goToNextYear() {
-        if let nextYear { goToYear(nextYear) }
+    func goForwardYear() {
+        if let forwardYear { goToYear(forwardYear) }
     }
 
-    func goToPreviousYear() {
-        if let previousYear { goToYear(previousYear) }
+    func goBackYear() {
+        if let backYear { goToYear(backYear) }
     }
 
-    /// Opens year N at its first photo. Ignores years that are not offered.
-    func goToYear(_ yearsAgo: Int) {
+    func goToOldestYear() {
+        if let oldestYear { goToYear(oldestYear) }
+    }
+
+    func goToMostRecentYear() {
+        if let mostRecentYear { goToYear(mostRecentYear) }
+    }
+
+    /// Opens year N at its first photo, or at its end card. Ignores years
+    /// that are not offered.
+    func goToYear(_ yearsAgo: Int, atEnd: Bool = false) {
         guard navigator.years.contains(yearsAgo) else { return }
         self.yearsAgo = yearsAgo
         applyWindow()
+        if atEnd { stepper.moveToEnd() }
     }
 
     // MARK: Source actions
@@ -613,11 +678,15 @@ final class ViewerModel {
                 isShowingInfo = currentPhoto != nil
             }
         }
+        // -DebugNextPhotoCount <n> repeats that step n times, one per interval.
         let nextAfter = UserDefaults.standard.double(forKey: "DebugNextPhotoAfter")
         if nextAfter > 0 {
+            let steps = max(1, UserDefaults.standard.integer(forKey: "DebugNextPhotoCount"))
             Task {
-                try? await Task.sleep(for: .seconds(nextAfter))
-                nextPhoto()
+                for _ in 0..<steps {
+                    try? await Task.sleep(for: .seconds(nextAfter))
+                    nextPhoto()
+                }
             }
         }
         // -DebugShowIndexingDetails YES opens the toolbar progress popover.
@@ -1075,7 +1144,7 @@ final class ViewerModel {
     private func rebuildNavigator(preferredYear: Int?) {
         navigator = YearNavigator.build(timeline: timeline, today: today, weeks: weeks,
                                         showEmptyYears: showEmptyYears, calculator: calculator)
-        yearsAgo = preferredYear.map { navigator.nearest(to: $0) } ?? navigator.initialYear
+        yearsAgo = preferredYear.map { navigator.nearest(to: $0) } ?? navigator.initialYear(direction: yearDirection)
         applyWindow()
         refreshOnThisDay()
         updateWidget()

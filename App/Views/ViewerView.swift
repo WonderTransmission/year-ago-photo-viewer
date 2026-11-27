@@ -46,7 +46,7 @@ struct ViewerView: View {
             } description: {
                 Text("No photos from \(DisplayFormat.range(model.window)).")
             } actions: {
-                NextYearButton()
+                ForwardYearButton()
             }
         } else if let photo = model.currentPhoto {
             PhotoView(photo: photo, images: model.images)
@@ -69,7 +69,7 @@ struct ViewerView: View {
             } description: {
                 Text("You've seen all \(DisplayFormat.position(model.stepper)) from \(DisplayFormat.range(model.window)).")
             } actions: {
-                NextYearButton()
+                ForwardYearButton()
             }
         }
     }
@@ -78,11 +78,11 @@ struct ViewerView: View {
         HStack {
             Button("Previous Photo", systemImage: "chevron.left") { model.previousPhoto() }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                .disabled(!model.stepper.canGoBack)
+                .disabled(!model.canStepBack)
             Spacer()
             Button("Next Photo", systemImage: "chevron.right") { model.nextPhoto() }
                 .keyboardShortcut(.rightArrow, modifiers: [])
-                .disabled(!model.stepper.canGoForward)
+                .disabled(!model.canStepForward)
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.overlay)
@@ -142,9 +142,9 @@ private struct YearBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button("Previous Year", systemImage: "chevron.backward.2") { model.goToPreviousYear() }
-                .disabled(model.previousYear == nil)
-                .help("Previous year (⌘[)")
+            Button(model.backYearLabel, systemImage: "chevron.backward.2") { model.goBackYear() }
+                .disabled(model.backYear == nil)
+                .help(yearHelp(model.backYearLabel, model.backYear, key: "⌘["))
 
             Spacer(minLength: 0)
             Text([
@@ -157,16 +157,49 @@ private struct YearBar: View {
             .lineLimit(1)
             Spacer(minLength: 0)
 
+            DirectionToggle()
             YearPicker()
-            Button { model.goToNextYear() } label: {
-                Label("Next Year", systemImage: "chevron.forward.2")
+            Button { model.goForwardYear() } label: {
+                Label(model.forwardYearLabel, systemImage: "chevron.forward.2")
                     .labelStyle(.titleAndIconTrailing)
             }
-            .disabled(model.nextYear == nil)
-            .help("Next year (⌘])")
+            .disabled(model.forwardYear == nil)
+            .help(yearHelp(model.forwardYearLabel, model.forwardYear, key: "⌘]"))
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    /// "Later year: 2012 (⌘])", or "No later year".
+    private func yearHelp(_ label: String, _ yearsAgo: Int?, key: String) -> String {
+        guard let yearsAgo else { return "No \(label.lowercased())" }
+        return "\(label.capitalizedFirstWordOnly): \(String(model.calendarYear(yearsAgo: yearsAgo))) (\(key))"
+    }
+}
+
+/// Switches between newest years first and oldest years first. Highlighted
+/// while oldest first is on.
+private struct DirectionToggle: View {
+    @Environment(ViewerModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        Toggle(isOn: $model.oldestYearsFirst) {
+            Image(systemName: "arrow.left.arrow.right")
+        }
+        .toggleStyle(.button)
+        .help(model.oldestYearsFirst
+              ? "Oldest years first. Click to go from the most recent year back."
+              : "Most recent years first. Click to go from the oldest year forward.")
+        .accessibilityLabel("Oldest Years First")
+    }
+}
+
+private extension String {
+    /// "Later Year" → "Later year".
+    var capitalizedFirstWordOnly: String {
+        guard let first else { return self }
+        return String(first).uppercased() + dropFirst().lowercased()
     }
 }
 
@@ -176,7 +209,12 @@ struct YearPicker: View {
 
     var body: some View {
         Menu {
-            ForEach(model.navigator.years, id: \.self) { years in
+            Button(endLabel("Oldest Year", model.oldestYear)) { model.goToOldestYear() }
+                .disabled(model.oldestYear == nil || model.oldestYear == model.yearsAgo)
+            Button(endLabel("Most Recent Year", model.mostRecentYear)) { model.goToMostRecentYear() }
+                .disabled(model.mostRecentYear == nil || model.mostRecentYear == model.yearsAgo)
+            Divider()
+            ForEach(model.navigator.ordered(direction: model.yearDirection), id: \.self) { years in
                 Button {
                     model.goToYear(years)
                 } label: {
@@ -194,19 +232,27 @@ struct YearPicker: View {
             Text(String(model.displayedYear))
         }
         .fixedSize()
-        .help("Choose a year")
+        .help("Choose a year, or jump to the oldest or most recent")
         .accessibilityLabel("Year: \(String(model.displayedYear))")
+    }
+
+    /// "Oldest Year (2009)", or just the label when there are no photos.
+    private func endLabel(_ label: String, _ yearsAgo: Int?) -> String {
+        yearsAgo.map { "\(label) (\(String(model.calendarYear(yearsAgo: $0))))" } ?? label
     }
 }
 
-/// "Next Year" button for the end card and empty panel.
-private struct NextYearButton: View {
+/// The forward year button for the end card and empty panel, e.g.
+/// "Later Year: 2012" when going oldest first.
+private struct ForwardYearButton: View {
     @Environment(ViewerModel.self) private var model
 
     var body: some View {
-        if let next = model.nextYear {
-            Button("Next Year: \(String(model.calendarYear(yearsAgo: next)))") { model.goToNextYear() }
-                .buttonStyle(.borderedProminent)
+        if let year = model.forwardYear {
+            Button("\(model.forwardYearLabel): \(String(model.calendarYear(yearsAgo: year)))") {
+                model.goForwardYear()
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }

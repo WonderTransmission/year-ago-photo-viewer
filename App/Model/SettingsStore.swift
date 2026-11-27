@@ -12,6 +12,7 @@ struct SettingsStore {
         /// default for newly added sources.
         static let defaultDateSource = "dateSource"
         static let showMenuBarItem = "showMenuBarItem"
+        static let yearDirection = "yearDirection"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -21,6 +22,7 @@ struct SettingsStore {
             Key.showEmptyYears: true,
             Key.defaultDateSource: DateSourceKind.exif.rawValue,
             Key.showMenuBarItem: true,
+            Key.yearDirection: YearDirection.newestFirst.rawValue,
         ])
     }
 
@@ -36,6 +38,12 @@ struct SettingsStore {
                        WindowCalculator.allowedWeeks.upperBound)
         }
         nonmutating set { defaults.set(newValue, forKey: Key.weeks) }
+    }
+
+    /// Newest years first (default) or oldest years first.
+    var yearDirection: YearDirection {
+        get { defaults.string(forKey: Key.yearDirection).flatMap(YearDirection.init(rawValue:)) ?? .newestFirst }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.yearDirection) }
     }
 
     var showEmptyYears: Bool {
